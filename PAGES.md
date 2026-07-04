@@ -11,6 +11,8 @@ Repository:
 ## What Is Published
 
 - `index.html`, `styles.css`, `app.js`, `fx.js`
+- `manifest.webmanifest`, `sw.js`, `icons/` — PWA(ホーム画面追加・オフライン対応)。
+  占い履歴は localStorage に保存され、端末の外へは送信されない
 - `data/ja/terms.min.json` — 日本語語彙インデックス(アプリが起動時に読み込む)
 - `data/ja/meanings-*.min.json` — 意味テキストのシャード(「占う」時に遅延取得)
 - `data/dream_terms.json.gz` for full data (original languages, gzip)
