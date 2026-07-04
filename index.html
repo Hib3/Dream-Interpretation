@@ -2,13 +2,15 @@
 <html lang="ja">
   <head>
     <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
     <title>夢日記占い</title>
     <meta
       name="description"
-      content="夢日記を入力すると、夢占い辞書から該当する単語と意味を照合して文章で出力します。"
+      content="夢占い師に夢日記を話すと、58,000語の夢辞書から象徴を読み解いて占います。夢単語辞書と占い履歴つき。"
     />
     <meta name="theme-color" content="#0a0d24" />
+    <link rel="manifest" href="manifest.webmanifest" />
+    <link rel="apple-touch-icon" href="icons/icon-192.png" />
     <link
       rel="icon"
       href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E%F0%9F%8C%99%3C/text%3E%3C/svg%3E"
@@ -67,38 +69,139 @@
         <p id="dataStatus" class="data-status">辞書を読み込み中...</p>
       </header>
 
-      <section class="card input-card">
-        <div class="input-head">
-          <label for="dreamInput">夢日記</label>
-          <button id="sampleBtn" type="button" class="ghost-btn">例文を入れる</button>
-        </div>
-        <textarea
-          id="dreamInput"
-          spellcheck="true"
-          placeholder="見た夢をそのまま書いてください。例: 水の中を泳いでいたら、橋の向こうに白い犬がいて、空を飛ぶように逃げた。"
-        ></textarea>
-        <div class="controls">
-          <button id="interpretBtn" type="button">
-            <span class="btn-star" aria-hidden="true">✦</span>占う
-          </button>
-          <button id="clearBtn" type="button" class="ghost-btn">消去</button>
+      <nav class="tabs" role="tablist" aria-label="メニュー">
+        <button class="tab active" id="tab-fortune" role="tab" aria-selected="true" aria-controls="view-fortune" data-view="fortune">
+          <span class="tab-icon" aria-hidden="true">✦</span>夢占い
+        </button>
+        <button class="tab" id="tab-dictionary" role="tab" aria-selected="false" aria-controls="view-dictionary" data-view="dictionary">
+          <span class="tab-icon" aria-hidden="true">✧</span>夢単語辞書
+        </button>
+        <button class="tab" id="tab-history" role="tab" aria-selected="false" aria-controls="view-history" data-view="history">
+          <span class="tab-icon" aria-hidden="true">☽</span>履歴
+        </button>
+      </nav>
+
+      <!-- ============ 夢占い ============ -->
+      <section id="view-fortune" class="view active" role="tabpanel" aria-labelledby="tab-fortune">
+        <div class="talk">
+          <div class="talk-row teller">
+            <div class="avatar" aria-hidden="true">
+              <svg viewBox="0 0 120 120" role="img">
+                <defs>
+                  <linearGradient id="hood" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stop-color="#4b3d8f" />
+                    <stop offset="100%" stop-color="#221c4e" />
+                  </linearGradient>
+                  <radialGradient id="orb" cx="50%" cy="42%" r="60%">
+                    <stop offset="0%" stop-color="#efe6ff" />
+                    <stop offset="45%" stop-color="#b9a7f2" />
+                    <stop offset="100%" stop-color="#5b4bbb" />
+                  </radialGradient>
+                  <radialGradient id="orbGlow" cx="50%" cy="50%" r="50%">
+                    <stop offset="0%" stop-color="#cdbdff" stop-opacity="0.8" />
+                    <stop offset="100%" stop-color="#cdbdff" stop-opacity="0" />
+                  </radialGradient>
+                </defs>
+                <!-- フードの占い師 -->
+                <path d="M60 14 C34 14 24 40 24 62 L24 96 C24 102 30 106 36 106 L84 106 C90 106 96 102 96 96 L96 62 C96 40 86 14 60 14 Z" fill="url(#hood)" />
+                <ellipse cx="60" cy="52" rx="19" ry="21" fill="#141033" />
+                <circle class="teller-eye" cx="53" cy="50" r="2.6" fill="#ffe9b3" />
+                <circle class="teller-eye e2" cx="67" cy="50" r="2.6" fill="#ffe9b3" />
+                <!-- 水晶玉 -->
+                <circle class="orb-glow" cx="60" cy="92" r="24" fill="url(#orbGlow)" />
+                <circle class="orb" cx="60" cy="92" r="14" fill="url(#orb)" />
+                <path d="M52 88 Q56 84 62 86" stroke="#ffffff" stroke-opacity="0.7" stroke-width="1.6" fill="none" stroke-linecap="round" />
+                <circle class="moon-spark s1" cx="30" cy="30" r="2" fill="#ffeec2" />
+                <circle class="moon-spark s3" cx="92" cy="26" r="1.6" fill="#cdbdff" />
+              </svg>
+            </div>
+            <div class="bubble teller-bubble">
+              <p id="tellerText" aria-live="polite"></p>
+            </div>
+          </div>
+
+          <!-- あなたの夢(入力) -->
+          <div class="talk-row you" id="diaryRow">
+            <div class="bubble you-bubble input-bubble">
+              <label for="dreamInput" class="sr-only">夢日記</label>
+              <textarea
+                id="dreamInput"
+                spellcheck="true"
+                placeholder="見た夢を、覚えているままに…。例: 水の中を泳いでいたら、橋の向こうに白い犬がいて、空を飛ぶように逃げた。"
+              ></textarea>
+              <div class="controls">
+                <button id="interpretBtn" type="button">
+                  <span class="btn-star" aria-hidden="true">✦</span>占ってもらう
+                </button>
+                <button id="sampleBtn" type="button" class="ghost-btn">例文</button>
+                <button id="clearBtn" type="button" class="ghost-btn">消去</button>
+              </div>
+            </div>
+          </div>
+
+          <!-- 占い後: あなたの夢(確定した吹き出し) -->
+          <div class="talk-row you" id="diarySaidRow" hidden>
+            <div class="bubble you-bubble">
+              <p id="diarySaidText"></p>
+              <button id="rewriteBtn" type="button" class="link-btn">✎ 書き直す</button>
+            </div>
+          </div>
+
+          <!-- 占い師の返答(結果) -->
+          <div class="talk-row teller" id="readingRow" hidden>
+            <div class="avatar small" aria-hidden="true">
+              <svg viewBox="0 0 120 120"><use href="#hood" /><path d="M60 14 C34 14 24 40 24 62 L24 96 C24 102 30 106 36 106 L84 106 C90 106 96 102 96 96 L96 62 C96 40 86 14 60 14 Z" fill="url(#hood)" /><ellipse cx="60" cy="52" rx="19" ry="21" fill="#141033" /><circle cx="53" cy="50" r="2.6" fill="#ffe9b3" /><circle cx="67" cy="50" r="2.6" fill="#ffe9b3" /><circle cx="60" cy="92" r="14" fill="url(#orb)" /></svg>
+            </div>
+            <div class="bubble teller-bubble reading-bubble" aria-live="polite">
+              <p id="readingText"></p>
+              <div id="termChips" class="term-chips" hidden></div>
+              <p id="savedNote" class="saved-note" hidden>☽ この占いは「履歴」に残しました</p>
+            </div>
+          </div>
+
+          <!-- 折りたたみ式: 該当する単語の辞書 -->
+          <details class="dict-fold" id="matchedFold" hidden>
+            <summary>
+              <span class="h-orn" aria-hidden="true">✧</span>該当する単語の辞書
+              <span id="matchCount">0件</span>
+              <span class="fold-arrow" aria-hidden="true">▾</span>
+            </summary>
+            <div id="matches" class="matches"></div>
+          </details>
+
+          <div class="again-row" id="againRow" hidden>
+            <button id="againBtn" type="button" class="ghost-btn">✦ もう一度占ってもらう</button>
+          </div>
         </div>
       </section>
 
-      <section class="output" aria-live="polite">
-        <div class="card result-card" id="resultCard">
-          <h2><span class="h-orn" aria-hidden="true">✧</span>占い結果</h2>
-          <p id="readingText">夢日記を入力して「占う」を押してください。</p>
-          <div id="termChips" class="term-chips" hidden></div>
+      <!-- ============ 夢単語辞書 ============ -->
+      <section id="view-dictionary" class="view" role="tabpanel" aria-labelledby="tab-dictionary" hidden>
+        <div class="card dict-card">
+          <label for="dictSearch" class="dict-label"><span class="h-orn" aria-hidden="true">✧</span>夢単語辞書</label>
+          <input
+            id="dictSearch"
+            type="search"
+            placeholder="気になる単語をさがす(例: 犬、海、落ちる)"
+            autocomplete="off"
+          />
+          <div id="dictSuggest" class="term-chips dict-suggest"></div>
+          <p id="dictHint" class="dict-hint"></p>
+          <div id="dictResults" class="matches dict-results"></div>
         </div>
+      </section>
 
-        <div class="matched-block" id="matchedBlock" hidden>
-          <div class="matched-title">
-            <h2><span class="h-orn" aria-hidden="true">✧</span>該当する単語</h2>
-            <span id="matchCount">0件</span>
-          </div>
-          <div id="matches" class="matches"></div>
+      <!-- ============ 履歴 ============ -->
+      <section id="view-history" class="view" role="tabpanel" aria-labelledby="tab-history" hidden>
+        <div class="history-head">
+          <p class="history-note">占いの記録はこの端末の中だけに残ります。</p>
+          <button id="historyClearBtn" type="button" class="ghost-btn danger" hidden>すべて消す</button>
         </div>
+        <div id="historyList" class="history-list"></div>
+        <p id="historyEmpty" class="history-empty">
+          まだ記録がありません。<br />
+          「夢占い」で最初の夢を話してみてください。
+        </p>
       </section>
 
       <footer class="site-foot">
