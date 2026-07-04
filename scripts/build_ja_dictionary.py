@@ -24,6 +24,7 @@ import unicodedata
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from translate_dictionary import (  # noqa: E402
     MEANINGS_PER_ENTRY,
+    open_dictionary,
     MEANING_LIMIT,
     SEP,
     TR_CUT_PATTERNS,
@@ -32,7 +33,7 @@ from translate_dictionary import (  # noqa: E402
     truncate_sentences,
 )
 
-SHARD_COUNT = 32
+SHARD_COUNT = 128
 MAX_MEANINGS = 3  # 語義(sense)ごとの意味テキスト上限
 MAX_SENSES = 4  # 同一訳語に相乗りできる語義の上限
 MEANING_JA_LIMIT = 220
@@ -75,8 +76,16 @@ def clean_term_ja(term):
         parts = [p.strip() for p in term.split("、") if p.strip()]
         if parts:
             term = min(parts, key=len)
+    # 「結婚して結婚して」のような同語の連結を畳む
+    m = re.match(r"^(.{4,20})\1$", term)
+    if m:
+        term = m.group(1).strip()
     # 「水b」のような辞書の索引記号の名残を除去
     term = re.sub(r"(?<=[一-鿿ぁ-んァ-ヶー])[a-z]$", "", term)
+    # 「〜を見る」「〜の夢を見る」など翻訳定型の末尾を畳んで名詞へ寄せる
+    m = re.match(r"^(.{2,}?)(の夢)?を見る(こと|の)?$", term)
+    if m:
+        term = m.group(1).strip()
     # 「空の」「海で」など、活用由来の末尾助詞を1文字だけ落とす
     if len(term) >= 2 and term[-1] in TRAILING_PARTICLES and re.match(r"[一-鿿ァ-ヶ]", term[-2]):
         term = term[:-1]
@@ -136,13 +145,13 @@ def clean_meaning_ja(text, limit=MEANING_JA_LIMIT):
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--input", default="data/dream_terms.json")
+    parser.add_argument("--input", default="data/dream_terms.json.gz")
     parser.add_argument("--cache", required=True)
     parser.add_argument("--outdir", default="data/ja")
     args = parser.parse_args()
 
     cache = load_cache(args.cache)
-    with open(args.input, encoding="utf-8") as fh:
+    with open_dictionary(args.input) as fh:
         data = json.load(fh)
 
     def translated(lang, text):

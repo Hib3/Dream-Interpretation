@@ -14,6 +14,7 @@ Usage:
 """
 
 import argparse
+import gzip
 import json
 import random
 import re
@@ -42,6 +43,13 @@ TR_CUT_PATTERNS = [
 
 _print_lock = threading.Lock()
 _cache_lock = threading.Lock()
+
+
+def open_dictionary(path):
+    """dream_terms.json / .json.gz を透過的に開く。"""
+    if str(path).endswith(".gz"):
+        return gzip.open(path, "rt", encoding="utf-8")
+    return open(path, encoding="utf-8")
 
 
 def clean_text(text):
@@ -191,13 +199,13 @@ def make_batches(items, cache):
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--input", default="data/dream_terms.json")
+    parser.add_argument("--input", default="data/dream_terms.json.gz")
     parser.add_argument("--cache", required=True)
     parser.add_argument("--jobs", type=int, default=4)
     parser.add_argument("--only", choices=["terms", "meanings"])
     args = parser.parse_args()
 
-    with open(args.input, encoding="utf-8") as fh:
+    with open_dictionary(args.input) as fh:
         data = json.load(fh)
 
     items = collect_items(data, args.only)

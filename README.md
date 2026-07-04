@@ -16,7 +16,7 @@ python scripts/build_dream_terms.py
 
 生成物:
 
-- `data/dream_terms.json`: term単位に統合した meanings / sources 付きJSON(原語のまま)
+- `data/dream_terms.json.gz`: term単位に統合した meanings / sources 付きJSON(原語のまま、gzip圧縮)
 
 ## 日本語辞書の生成
 
@@ -54,8 +54,8 @@ python3 scripts/build_ja_dictionary.py --cache /path/to/translation_cache.jsonl
 
 ## Current Coverage
 
-- implemented sources: 15
-- entries: 22150
+- implemented sources: 16
+- entries: 79114
 - duplicate `term_normalized`: 0
 - languages: `en`, `tr`, `zh-Hant`, `my`
 

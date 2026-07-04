@@ -13,22 +13,21 @@ Repository:
 - `index.html`, `styles.css`, `app.js`, `fx.js`
 - `data/ja/terms.min.json` — 日本語語彙インデックス(アプリが起動時に読み込む)
 - `data/ja/meanings-*.min.json` — 意味テキストのシャード(「占う」時に遅延取得)
-- `data/dream_terms.json` for readable full data (original languages)
+- `data/dream_terms.json.gz` for full data (original languages, gzip)
 - `data/source_registry.json` for source status
 
 `data/raw/` is intentionally ignored because it contains heavy source caches.
 
 ## Current Dataset
 
-- Japanese entries: 15907 (merged from 22150 original entries, sense-split per original term)
+- Japanese entries: 58577 (merged from 79114 original entries, sense-split per original term)
 - original languages: `en`, `tr`, `zh-Hant`, `my` (translated to Japanese)
-- implemented sources: 15
+- implemented sources: 16
 
 ## Verify Locally
 
 ```powershell
 python scripts/build_dream_terms.py
-python -m json.tool data\dream_terms.json > $null
 python -m json.tool data\ja\terms.min.json > $null
 python -m json.tool data\source_registry.json > $null
 node --check app.js

@@ -175,6 +175,27 @@
       "status": "api_candidate",
       "access": "commercial/API access",
       "reuse_note": "Use only with an API key and the provider's terms."
+    },
+    {
+      "name": "Rüya Tabiri GitHub Pages Dataset",
+      "url": "https://github.com/ruya-tabiri/ruya-tabiri.github.io",
+      "status": "implemented",
+      "access": "raw.githubusercontent.com sitemap crawl (57,993 pages)",
+      "reuse_note": "Repository licensed under GPL-3.0; README invites free reuse of the database. Attribution retained."
+    },
+    {
+      "name": "Our Knowledge Box (Project Gutenberg #43418)",
+      "url": "https://www.gutenberg.org/ebooks/43418",
+      "status": "rejected_no_dictionary_content",
+      "access": "GITenberg raw mirror",
+      "reuse_note": "Front matter only advertises Madame Lanormand's dream dictionary; the book itself contains no dream entries."
+    },
+    {
+      "name": "Guide to Fortune-Telling by Dreams (Project Gutenberg #65367)",
+      "url": "https://www.gutenberg.org/ebooks/65367",
+      "status": "candidate_network_blocked",
+      "access": "gutenberg.org and mirrors unreachable from build environment; no GITenberg mirror (ID too recent)",
+      "reuse_note": "Public domain; implement when gutenberg.org is reachable."
     }
   ]
 }

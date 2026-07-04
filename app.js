@@ -73,9 +73,11 @@ const STOP_LATIN = new Set([
 ]);
 
 function normalize(value) {
+  // toLocaleLowerCase はロケール解決が走り 58k 行のインデックス構築で
+  // 数秒単位の差が出るため toLowerCase を使う
   return String(value || "")
     .normalize("NFKC")
-    .toLocaleLowerCase()
+    .toLowerCase()
     .replace(/\s+/g, " ")
     .trim();
 }
@@ -87,12 +89,21 @@ function foldKana(value) {
   );
 }
 
+// 以下の *Norm 関数は normalize 済みの文字列を受け取る(58k行の構築を1回の正規化で済ませる)
+function phraseKeyNorm(norm) {
+  return foldKana(norm).replace(/[\s「」『』()[\]。、.,!?！?・…"']/g, "");
+}
+
 function phraseKey(value) {
-  return foldKana(normalize(value)).replace(/[\s「」『』()[\]。、.,!?！?・…"']/g, "");
+  return phraseKeyNorm(normalize(value));
+}
+
+function extractRunsNorm(norm) {
+  return norm.match(RUN_RE) || [];
 }
 
 function extractRuns(value) {
-  return normalize(value).match(RUN_RE) || [];
+  return extractRunsNorm(normalize(value));
 }
 
 function isKanji(run) {
@@ -103,11 +114,11 @@ function isLatin(run) {
   return /^[a-z0-9]+$/.test(run);
 }
 
-function classifyKeywords(term) {
+function classifyKeywords(termNorm) {
   const kwKanji = [];
   const kwOther = [];
   const kwLatin = [];
-  for (const run of extractRuns(term)) {
+  for (const run of extractRunsNorm(termNorm)) {
     if (STOP_KW.has(run)) continue;
     if (isKanji(run)) {
       kwKanji.push(run);
@@ -133,14 +144,14 @@ async function loadData() {
     state.build = data.build || "";
     state.rows = data.entries.map((row) => {
       const [term, tone, langs, orig, shard, idx] = row;
-      const { kwKanji, kwOther, kwLatin } = classifyKeywords(term);
+      const termNorm = normalize(term);
+      const { kwKanji, kwOther, kwLatin } = classifyKeywords(termNorm);
       // 元言語の単語もラテン文字キーワードとして拾う(英語入力の互換)
-      for (const run of extractRuns(orig)) {
+      for (const run of extractRunsNorm(normalize(orig))) {
         if (isLatin(run) && run.length >= 3 && !STOP_LATIN.has(run) && !kwLatin.includes(run)) {
           kwLatin.push(run);
         }
       }
-      const termNorm = normalize(term);
       return {
         term,
         tone,
@@ -148,7 +159,7 @@ async function loadData() {
         orig,
         shard,
         idx,
-        phraseFold: phraseKey(term),
+        phraseFold: phraseKeyNorm(termNorm),
         // ラテン文字だけの語は単語境界つきで照合する("rom"が"from"に紛れないように)
         latinPhrase: /^[a-z0-9 .'-]+$/.test(termNorm) ? termNorm : null,
         kwKanji,
@@ -292,11 +303,12 @@ function findMatches(ctx) {
         (a.jaFull && item.jaFull && sameKwSet(a.row.kwKanji, item.row.kwKanji))
     );
     if (dupe) continue;
-    if (
-      item.row.term.length > 12 &&
-      accepted.some((a) => a.row.kwKanji.some((kw) => item.row.kwKanji.includes(kw)))
-    ) {
-      continue;
+    // 同じ漢字語幹(井戸・結婚など)を共有する語は最大2件まで
+    if (item.row.kwKanji.length > 0) {
+      const sameStem = accepted.filter((a) =>
+        a.row.kwKanji.some((kw) => item.row.kwKanji.includes(kw))
+      ).length;
+      if (sameStem >= 2) continue;
     }
     accepted.push(item);
   }
@@ -315,6 +327,8 @@ function firstSentences(text, limit = 110) {
     if (out.length >= limit * 0.55) break;
   }
   if (!out) out = clean.slice(0, limit);
+  // 訳文が一文で異常に長い場合は読みやすい長さで切る
+  if (out.length > limit * 1.6) out = `${out.slice(0, Math.floor(limit * 1.5))}…`;
   return out.trim();
 }
 
