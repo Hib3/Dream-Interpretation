@@ -8,50 +8,96 @@
       name="description"
       content="夢日記を入力すると、夢占い辞書から該当する単語と意味を照合して文章で出力します。"
     />
+    <meta name="theme-color" content="#0a0d24" />
+    <link
+      rel="icon"
+      href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E%F0%9F%8C%99%3C/text%3E%3C/svg%3E"
+    />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Shippori+Mincho:wght@500;600;700&family=Zen+Maru+Gothic:wght@400;500;700&display=swap"
+      rel="stylesheet"
+    />
     <link rel="stylesheet" href="styles.css" />
   </head>
   <body>
+    <canvas id="starfield" aria-hidden="true"></canvas>
+    <div class="aurora aurora-a" aria-hidden="true"></div>
+    <div class="aurora aurora-b" aria-hidden="true"></div>
+    <div class="aurora aurora-c" aria-hidden="true"></div>
+
     <main class="app-shell">
-      <section class="workbench">
-        <div class="input-pane">
-          <div class="title-row">
-            <div>
-              <h1>夢日記占い</h1>
-              <p id="dataStatus">辞書を読み込み中...</p>
-            </div>
-            <button id="sampleBtn" type="button">例文</button>
-          </div>
-
-          <label for="dreamInput">夢日記</label>
-          <textarea
-            id="dreamInput"
-            spellcheck="true"
-            placeholder="見た夢をそのまま書いてください。例: 水の中を泳いでいたら、橋の向こうに白い犬がいて、空を飛ぶように逃げた。"
-          ></textarea>
-
-          <div class="controls">
-            <button id="interpretBtn" type="button">占う</button>
-            <button id="clearBtn" type="button">消去</button>
-          </div>
+      <header class="hero">
+        <div class="moon-wrap" aria-hidden="true">
+          <svg class="moon" viewBox="0 0 160 160" role="img">
+            <defs>
+              <radialGradient id="moonHalo" cx="50%" cy="50%" r="50%">
+                <stop offset="0%" stop-color="#ffe9b3" stop-opacity="0.55" />
+                <stop offset="45%" stop-color="#ffe9b3" stop-opacity="0.16" />
+                <stop offset="100%" stop-color="#ffe9b3" stop-opacity="0" />
+              </radialGradient>
+              <linearGradient id="moonFace" x1="0" y1="0" x2="1" y2="1">
+                <stop offset="0%" stop-color="#fff6dd" />
+                <stop offset="100%" stop-color="#f4cf7d" />
+              </linearGradient>
+              <mask id="crescent">
+                <circle cx="80" cy="80" r="38" fill="#fff" />
+                <circle cx="97" cy="66" r="34" fill="#000" />
+              </mask>
+            </defs>
+            <circle cx="80" cy="80" r="76" fill="url(#moonHalo)" />
+            <circle cx="80" cy="80" r="38" fill="url(#moonFace)" mask="url(#crescent)" />
+            <circle class="moon-spark s1" cx="126" cy="46" r="2.4" fill="#ffeec2" />
+            <circle class="moon-spark s2" cx="34" cy="58" r="1.8" fill="#cdbdff" />
+            <circle class="moon-spark s3" cx="118" cy="118" r="1.6" fill="#ffeec2" />
+          </svg>
         </div>
+        <h1>夢日記占い</h1>
+        <p class="tagline">ゆうべの夢を、ことばにして。</p>
+        <p id="dataStatus" class="data-status">辞書を読み込み中...</p>
+      </header>
 
-        <div class="output-pane" aria-live="polite">
-          <section class="result-block">
-            <h2>占い結果</h2>
-            <p id="readingText">夢日記を入力して「占う」を押してください。</p>
-          </section>
-
-          <section class="result-block">
-            <div class="matched-title">
-              <h2>該当する単語</h2>
-              <span id="matchCount">0件</span>
-            </div>
-            <div id="matches" class="matches"></div>
-          </section>
+      <section class="card input-card">
+        <div class="input-head">
+          <label for="dreamInput">夢日記</label>
+          <button id="sampleBtn" type="button" class="ghost-btn">例文を入れる</button>
+        </div>
+        <textarea
+          id="dreamInput"
+          spellcheck="true"
+          placeholder="見た夢をそのまま書いてください。例: 水の中を泳いでいたら、橋の向こうに白い犬がいて、空を飛ぶように逃げた。"
+        ></textarea>
+        <div class="controls">
+          <button id="interpretBtn" type="button">
+            <span class="btn-star" aria-hidden="true">✦</span>占う
+          </button>
+          <button id="clearBtn" type="button" class="ghost-btn">消去</button>
         </div>
       </section>
+
+      <section class="output" aria-live="polite">
+        <div class="card result-card" id="resultCard">
+          <h2><span class="h-orn" aria-hidden="true">✧</span>占い結果</h2>
+          <p id="readingText">夢日記を入力して「占う」を押してください。</p>
+          <div id="termChips" class="term-chips" hidden></div>
+        </div>
+
+        <div class="matched-block" id="matchedBlock" hidden>
+          <div class="matched-title">
+            <h2><span class="h-orn" aria-hidden="true">✧</span>該当する単語</h2>
+            <span id="matchCount">0件</span>
+          </div>
+          <div id="matches" class="matches"></div>
+        </div>
+      </section>
+
+      <footer class="site-foot">
+        <p>夢占いは断定ではなく、心をふりかえる小さな手がかりです。</p>
+      </footer>
     </main>
 
+    <script src="fx.js"></script>
     <script src="app.js"></script>
   </body>
 </html>
