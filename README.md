@@ -2,6 +2,8 @@
 
 夢占い用の「夢の単語」と「意味」を対応させるJSONデータセットです。
 
+公開アプリ: https://hib3.github.io/Dream-Interpretation/
+
 現時点では、再利用条件を確認できた Project Gutenberg の夢占い古典4冊、Hugging Face 4件、公開ダウンロード可能な Kaggle 2件、GitHub JSON/CSV 4件、Wikisource `周公解夢` を抽出元にしています。
 
 現行サイトや商用APIは `data/source_registry.json` に候補として記録します。独占的な著作権表記や `All rights reserved` がある本文は取得対象外にし、表記がないものは `no_license_unverified` として別扱いにします。
