@@ -12,6 +12,9 @@ const dataStatus = document.querySelector("#dataStatus");
 const readingText = document.querySelector("#readingText");
 const matchesEl = document.querySelector("#matches");
 const matchCount = document.querySelector("#matchCount");
+const resultCard = document.querySelector("#resultCard");
+const matchedBlock = document.querySelector("#matchedBlock");
+const termChips = document.querySelector("#termChips");
 
 const samples = [
   "水の中を泳いでいたら、橋の向こうに白い犬がいて、最後は空を飛ぶように逃げた。",
@@ -148,14 +151,41 @@ function makeReading(matches, text) {
     .join("\n\n");
 }
 
+function replay(el) {
+  el.classList.remove("reveal");
+  void el.offsetWidth; // アニメーションを再生し直すためのリフロー
+  el.classList.add("reveal");
+}
+
+function renderTermChips(matches) {
+  termChips.innerHTML = "";
+  termChips.hidden = matches.length === 0;
+  matches.forEach((entry, i) => {
+    const chip = document.createElement("button");
+    chip.type = "button";
+    chip.className = "term-chip";
+    chip.textContent = entry.term;
+    chip.addEventListener("click", () => {
+      const card = matchesEl.children[i];
+      if (!card) return;
+      card.scrollIntoView({ block: "center" });
+      card.classList.add("flash");
+      setTimeout(() => card.classList.remove("flash"), 1200);
+    });
+    termChips.appendChild(chip);
+  });
+}
+
 function renderMatches(matches) {
   matchCount.textContent = `${matches.length}件`;
+  matchedBlock.hidden = matches.length === 0;
   matchesEl.innerHTML = "";
-  for (const entry of matches) {
+  matches.forEach((entry, i) => {
     const meaning = entry.meanings?.[0];
     const source = entry.sources?.[0];
     const card = document.createElement("article");
-    card.className = "match-card";
+    card.className = "match-card reveal";
+    card.style.animationDelay = `${Math.min(i * 70, 700)}ms`;
     card.innerHTML = `
       <div class="match-head">
         <div class="match-term"></div>
@@ -171,14 +201,19 @@ function renderMatches(matches) {
       ? `${source.name} / meanings: ${entry.meaning_count}`
       : `meanings: ${entry.meaning_count}`;
     matchesEl.appendChild(card);
-  }
+  });
 }
 
 function interpret() {
   const text = dreamInput.value;
   const matches = findMatches(text);
   readingText.textContent = makeReading(matches, text);
+  renderTermChips(matches);
   renderMatches(matches);
+  replay(resultCard);
+  if (text.trim()) {
+    resultCard.scrollIntoView({ block: "nearest", behavior: "smooth" });
+  }
 }
 
 interpretBtn.addEventListener("click", interpret);
