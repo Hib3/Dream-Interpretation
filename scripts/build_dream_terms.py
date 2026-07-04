@@ -853,9 +853,17 @@ def merge_entries(entries: list[dict]) -> list[dict]:
 
 def write_output(entries: list[dict]) -> None:
     OUT_PATH.parent.mkdir(parents=True, exist_ok=True)
+    language_counts = {}
+    source_names = set()
+    for entry in entries:
+        language_counts[entry["language"]] = language_counts.get(entry["language"], 0) + 1
+        for source in entry.get("sources", []):
+            source_names.add(source["name"])
     payload = {
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "entry_count": len(entries),
+        "language_counts": dict(sorted(language_counts.items())),
+        "source_count": len(source_names),
         "schema": {
             "term": "Dream symbol or keyword.",
             "term_normalized": "Case-folded lookup key.",

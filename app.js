@@ -87,7 +87,10 @@ async function loadData() {
     state.entries = data.entries || [];
     state.index = buildIndex(state.entries);
     state.loaded = true;
-    dataStatus.textContent = `辞書 ${data.entry_count.toLocaleString()} 件を読み込み済み`;
+    const languages = Object.entries(data.language_counts || {})
+      .map(([lang, count]) => `${lang}:${count.toLocaleString()}`)
+      .join(" / ");
+    dataStatus.textContent = `辞書 ${data.entry_count.toLocaleString()} 件 / ${data.source_count || "-"} sources / ${languages}`;
   } catch (error) {
     dataStatus.textContent = "辞書の読み込みに失敗しました";
     readingText.textContent = `data/dream_terms.json を確認してください。${error.message}`;
