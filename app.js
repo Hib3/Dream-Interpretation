@@ -555,6 +555,22 @@ const INTRO_MOOD = {
   neutral: "いまのあなたの心を、静かに映す象徴たちです。",
 };
 
+// 総括のひとこと用: テーマの呼び名と、夜の気配のことば
+const THEME_NOUN = {
+  love: "絆",
+  work: "挑戦",
+  money: "実り",
+  social: "人とのつながり",
+  health: "休息",
+  change: "変わり目",
+};
+const MOOD_EPITHET = {
+  pos: "追い風の吹く",
+  neg: "足もとを確かめたい",
+  mixed: "光と影のあわいにある",
+  neutral: "心を静かに映す",
+};
+
 function composeReading(items, diaryText, ctx) {
   const concise = items.filter((it) => it.row.term.length <= 14);
   const pool = concise.length >= 3 ? concise : items;
@@ -589,7 +605,8 @@ function composeReading(items, diaryText, ctx) {
   // テーマ別の読み: 辞書から抜き出した結果句を織り合わせ、助言を一文だけ添える
   const themeLines = [];
   const quoted = new Set();
-  for (const slot of analyzeThemes(top).slice(0, 3)) {
+  const themeSlots = analyzeThemes(top);
+  for (const slot of themeSlots.slice(0, 3)) {
     const symsNote = slot.symbols
       .slice()
       .sort((a, b) => a.length - b.length)
@@ -670,11 +687,19 @@ function composeReading(items, diaryText, ctx) {
     .sort((a, b) => a.length - b.length)[0];
   const omen = `今夜のしるしは〈${omenTerm}〉。眠る前にひとつだけ、それを思い浮かべてみてください。`;
 
+  // 総括のひとこと: 主なテーマと夜の気配をひとつの句に束ねる
+  const nouns = themeSlots.slice(0, 2).map((slot) => THEME_NOUN[slot.theme.key]);
+  const nightName = nouns.length
+    ? `${MOOD_EPITHET[mood]}、${nouns.join("と")}の夜`
+    : `〈${omenTerm}〉が寄り添う夜`;
+  const closing = `——ひとことで言うなら、今夜は「${nightName}」。どうか、良い夢の続きを。`;
+
   const parts = [intro];
   if (pairInsight) parts.push(`✧象徴の重なり — ${pairInsight}`);
   if (themeLines.length) parts.push(themeLines.join("\n"));
   parts.push(toneSummary(top));
   parts.push(omen);
+  parts.push(closing);
   return parts.join("\n\n");
 }
 
