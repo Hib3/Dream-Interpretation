@@ -423,48 +423,47 @@ const THEMES = [
     key: "love",
     label: "恋愛・絆",
     kws: ["愛", "恋", "結婚", "恋人", "パートナー", "出会い", "絆", "ロマン", "異性", "縁", "花嫁", "花婿"],
-    pos: "心の距離が縮まる兆しです。素直なひとことが、思いのほか遠くまで届くでしょう。",
-    neg: "すれ違いへの小さな警告が滲んでいます。言葉を惜しまないことが、いちばんの守りになります。",
+    pos: "素直なひとことが、思いのほか遠くまで届くでしょう。",
+    neg: "言葉を惜しまないことが、いちばんの守りになります。",
   },
   {
     key: "work",
     label: "仕事・挑戦",
     kws: ["仕事", "職", "キャリア", "昇進", "事業", "努力", "成功", "達成", "目標", "挑戦", "勉強", "試験", "計画"],
-    pos: "積み上げてきたものが形になる流れが視えます。温めている計画は、動かして良い頃合いです。",
-    neg: "焦って結論を急ぐと足をすくわれる、という囁きが聞こえます。手順をひとつずつ確かめてください。",
+    pos: "温めている計画は、動かして良い頃合いです。",
+    neg: "焦らず、手順をひとつずつ確かめてください。",
   },
   {
     key: "money",
     label: "金運",
     kws: ["お金", "金銭", "財", "富", "利益", "収入", "繁栄", "損失", "貧", "豊か", "宝"],
-    pos: "実りの気配があります。思わぬところから、小さな豊かさが舞い込みそうです。",
-    neg: "財布の紐と心の余裕はつながっているもの。大きな決断は、少しだけ寝かせるのが吉です。",
+    pos: "思わぬところから、小さな豊かさが舞い込みそうです。",
+    neg: "大きな決断は、少しだけ寝かせるのが吉です。",
   },
   {
     key: "social",
     label: "人とのあいだ",
     kws: ["友人", "友達", "人間関係", "信頼", "仲間", "家族", "敵", "裏切", "嫉妬", "悪意", "援助", "助け", "周囲", "中傷", "親戚"],
-    pos: "あなたを支えようとする気配が漂っています。頼ることは、弱さではありませんよ。",
-    neg: "身近な誰かとの間に、薄い霧が立っているようです。噂ではなく、本人の言葉を確かめてください。",
+    pos: "頼ることは、弱さではありませんよ。",
+    neg: "噂ではなく、本人の言葉を確かめてください。",
   },
   {
     key: "health",
     label: "心と体",
     kws: ["健康", "病", "体", "疲れ", "回復", "癒し", "休息", "ストレス", "心配", "不安", "安らぎ", "眠"],
-    pos: "心と体が回復へ向かうしるしです。眠りを大切にすれば、その流れはさらに速まります。",
-    neg: "休息を求める、心の声かもしれません。予定をひとつ減らす勇気を持ってください。",
+    pos: "眠りを大切にすれば、回復はさらに速まります。",
+    neg: "予定をひとつ減らす勇気を持ってください。",
   },
   {
     key: "change",
     label: "変化・転機",
     kws: ["変化", "転機", "移行", "新しい", "始ま", "終わ", "旅", "別れ", "再会", "チャンス", "運命", "知らせ", "扉", "道"],
-    pos: "新しい扉が、すでに開きかけています。この変化は、あなたの味方です。",
-    neg: "変わり目特有の心細さが揺れています。急がなくても、季節は必ず移ろいますから。",
+    pos: "この変化は、あなたの味方です。",
+    neg: "急がなくても、季節は必ず移ろいますから。",
   },
 ];
 
-const THEME_NEUTRAL =
-  "この運の流れは、まだ定まっていません。二、三日、心の温度を観察してみてください。";
+const THEME_NEUTRAL = "二、三日、心の温度を観察してみてください。";
 
 const POS_WORDS = ["吉", "幸運", "幸せ", "成功", "繁栄", "喜び", "順調", "達成", "利益", "豊か", "昇進", "健康", "平和", "安心", "祝福", "満足", "発展", "勝利", "良い", "希望", "恵まれ", "報われ"];
 const NEG_WORDS = ["凶", "不吉", "警告", "注意", "不安", "失敗", "病気", "トラブル", "危険", "損失", "悪い", "困難", "裏切り", "別れ", "苦し", "災い", "悩み", "対立", "喪失", "孤独", "悪意", "死"];
@@ -483,10 +482,12 @@ function analyzeThemes(items) {
         if (text.includes(kw)) hits += 1;
       }
       if (hits === 0) continue;
-      const slot = agg.get(theme.key) || { theme, score: 0, polarity: 0, symbols: [] };
+      const slot =
+        agg.get(theme.key) || { theme, score: 0, polarity: 0, symbols: [], items: [] };
       slot.score += hits;
       slot.polarity += polarity * hits;
       if (!slot.symbols.includes(it.row.term)) slot.symbols.push(it.row.term);
+      slot.items.push({ it, hits });
       agg.set(theme.key, slot);
     }
   }
@@ -523,23 +524,47 @@ function composeReading(items) {
     .join("");
   const intro = `……視えましたよ。あなたの夢を漂っていたのは、${names}。${INTRO_MOOD[mood]}`;
 
-  // テーマ別の読み(辞書本文は引用せず、傾向を織り合わせる)
+  // テーマ別の読み: 辞書の意味を「」で引用し(逸脱を防ぐ)、短い助言を添える
   const themeLines = [];
+  const quoted = new Set();
   for (const slot of analyzeThemes(top).slice(0, 3)) {
-    // 引用する象徴名は短いものを優先(訳文由来の長いフレーズを文中に入れない)
+    // 見出しに出す象徴名は短いものを優先(訳文由来の長いフレーズを避ける)
     const syms = slot.symbols
       .slice()
       .sort((a, b) => a.length - b.length)
       .filter((t) => t.length <= 10)
       .slice(0, 2);
     const symNote = syms.length ? `(${syms.join("・")})` : "";
-    const body =
+    // 引用元はテーマ間で重複させず、寄与の大きい順に選ぶ
+    const source = slot.items
+      .sort((a, b) => b.hits - a.hits)
+      .map((s) => s.it)
+      .find((it) => !quoted.has(it));
+    let snippet = "";
+    if (source) {
+      quoted.add(source);
+      snippet = firstSentences((source.meanings || [])[0] || "", 80);
+    }
+    const advice =
       slot.polarity >= 1
         ? slot.theme.pos
         : slot.polarity <= -1
           ? slot.theme.neg
           : THEME_NEUTRAL;
-    themeLines.push(`✦${slot.theme.label}${symNote} ${body}`);
+    const grounded = snippet
+      ? `〈${source.row.term}〉は「${snippet}」とされます。${advice}`
+      : advice;
+    themeLines.push(`✦${slot.theme.label}${symNote} ${grounded}`);
+  }
+
+  // テーマが読み取れない夢でも、辞書の意味そのものは必ず伝える
+  if (themeLines.length === 0) {
+    for (const it of top.slice(0, 3)) {
+      const snippet = firstSentences((it.meanings || [])[0] || "", 90);
+      if (!snippet) continue;
+      const tone = TONE_LABEL[it.tone] ? `【${TONE_LABEL[it.tone]}】` : "";
+      themeLines.push(`✦〈${it.row.term}〉${tone} ${snippet}`);
+    }
   }
 
   // 今夜のしるし(強く出た象徴のうち、短く覚えやすいもの)
