@@ -148,15 +148,16 @@ function classifyKeywords(termNorm) {
 
 /* ---------- データ読込 ---------- */
 
-async function fetchJson(path) {
-  const response = await fetch(path, { cache: "force-cache" });
+async function fetchJson(path, cacheMode = "force-cache") {
+  const response = await fetch(path, { cache: cacheMode });
   if (!response.ok) throw new Error(`HTTP ${response.status} (${path})`);
   return response.json();
 }
 
 async function loadData() {
   try {
-    const data = await fetchJson("data/ja/terms.min.json");
+    // 語彙インデックスはURLに版が乗らないため、HTTPの再検証(ETag)で更新を拾う
+    const data = await fetchJson("data/ja/terms.min.json", "no-cache");
     state.shardCount = data.shard_count;
     state.build = data.build || "";
     state.rows = data.entries.map((row) => {
@@ -201,6 +202,9 @@ async function getShard(shardId) {
 }
 
 function prefetchShards() {
+  // 省データ設定・遅い回線では全シャード(約40MB)の先読みをしない
+  const conn = navigator.connection;
+  if (conn && (conn.saveData || /(^|-)2g/.test(conn.effectiveType || ""))) return;
   let next = 0;
   const idle =
     typeof window.requestIdleCallback === "function"
@@ -230,8 +234,24 @@ function buildContext(text) {
     else if (isLatin(run)) latinSet.add(run);
     else otherSet.add(foldKana(run));
   }
+  // かな表記の象徴語を漢字へ橋渡しする。
+  // 「浴びる→ビル」「受け取り→とり」のような活用語の一部への誤発火を防ぐため、
+  // カタカナ表記(イヌ等)はそのまま採用し、ひらがな表記は直前が
+  // ひらがな・漢字以外(文頭・句読点・カタカナの後)の時だけ拾う
+  const WORDISH = /[ぁ-ん一-鿿々]/;
   for (const [kana, kanji] of KANA_SYNONYMS) {
-    if (textFold.includes(kana)) kanjiRuns.push(kanji);
+    if (otherSet.has(kana)) {
+      kanjiRuns.push(kanji);
+      continue;
+    }
+    let idx = textFold.indexOf(kana);
+    while (idx !== -1) {
+      if (idx === 0 || !WORDISH.test(textFold[idx - 1])) {
+        kanjiRuns.push(kanji);
+        break;
+      }
+      idx = textFold.indexOf(kana, idx + 1);
+    }
   }
   const textPad = ` ${normalize(text).replace(/[^\p{Letter}\p{Number}]+/gu, " ").trim()} `;
   return { textFold, textPad, kanjiRuns, otherSet, latinSet };
@@ -759,7 +779,6 @@ function searchDictionary(query) {
     else if (row.latinPhrase && row.latinPhrase.includes(q)) rank = 1;
     else if (normalize(row.orig).includes(q) && q.length >= 3) rank = 1;
     if (rank > 0) results.push({ row, rank });
-    if (results.length >= 400) break;
   }
   results.sort(
     (a, b) => b.rank - a.rank || a.row.term.length - b.row.term.length
@@ -844,6 +863,7 @@ function switchView(name) {
   }
   if (name === "history") renderHistory();
   if (name === "dictionary") renderDictSuggest();
+  window.scrollTo({ top: 0, behavior: reduceMotion ? "auto" : "smooth" });
   if (history.replaceState) history.replaceState(null, "", `#${name}`);
 }
 

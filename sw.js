@@ -5,7 +5,7 @@
  * - その他はネットワーク優先+キャッシュフォールバック
  */
 
-const CACHE_NAME = "dream-diary-v1";
+const CACHE_NAME = "dream-diary-v2";
 const SHELL = [
   ".",
   "index.html",
@@ -44,8 +44,9 @@ self.addEventListener("fetch", (event) => {
   const url = new URL(request.url);
   if (url.origin !== location.origin) return; // フォント等の外部リソースはブラウザ任せ
 
-  // 辞書データ: キャッシュ優先(ビルドIDつきURLなので中身が変わればURLも変わる)
-  if (url.pathname.includes("/data/ja/")) {
+  // 意味シャード: キャッシュ優先(ビルドIDつきURLなので中身が変わればURLも変わる)。
+  // terms.min.json は版がURLに乗らないため下のネットワーク優先に流し、更新を反映する
+  if (url.pathname.includes("/data/ja/meanings-")) {
     event.respondWith(
       caches.open(CACHE_NAME).then(async (cache) => {
         const hit = await cache.match(request);
