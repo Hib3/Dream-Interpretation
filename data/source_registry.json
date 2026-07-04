@@ -1,0 +1,180 @@
+{
+  "updated_at": "2026-07-04",
+  "sources": [
+    {
+      "name": "Project Gutenberg: Ten Thousand Dreams Interpreted",
+      "url": "https://www.gutenberg.org/ebooks/926",
+      "status": "implemented",
+      "access": "public ebook text",
+      "reuse_note": "Project Gutenberg license; public-domain status depends on jurisdiction."
+    },
+    {
+      "name": "Dream Decoder Synthetic Dataset",
+      "url": "https://huggingface.co/datasets/samvlad/dream-decoder-dataset",
+      "status": "implemented",
+      "access": "Hugging Face dataset API",
+      "reuse_note": "MIT License for dataset content; synthetic dream descriptions and interpretations."
+    },
+    {
+      "name": "Dream Interpretation Turkish Hugging Face Dataset",
+      "url": "https://huggingface.co/datasets/teragron/dream_interpretation",
+      "status": "implemented",
+      "access": "Hugging Face dataset API",
+      "reuse_note": "MIT License for dataset content."
+    },
+    {
+      "name": "DreamBook Guanaco Format Hugging Face Dataset",
+      "url": "https://huggingface.co/datasets/n3rd0/DreamBook_Guanaco_Format",
+      "status": "implemented",
+      "access": "Hugging Face dataset rows API with incremental cache",
+      "reuse_note": "No explicit license tag found in Hugging Face metadata; public dataset, verify before redistribution."
+    },
+    {
+      "name": "Rüya Tabirleri Hugging Face Dataset",
+      "url": "https://huggingface.co/datasets/tolgadev/ruyatabirleri",
+      "status": "implemented",
+      "access": "Hugging Face CSV file",
+      "reuse_note": "Apache 2.0 License for dataset content."
+    },
+    {
+      "name": "HeartYearning Dream Symbols Dataset",
+      "url": "https://github.com/ljt-one/dream-symbols-dataset",
+      "status": "implemented",
+      "access": "GitHub raw JSON file",
+      "reuse_note": "No explicit license file found; public GitHub JSON dataset, verify before redistribution."
+    },
+    {
+      "name": "Myanmar Dream Dictionary GitHub Dataset",
+      "url": "https://github.com/akmm-dev/dream-dictionary",
+      "status": "implemented",
+      "access": "GitHub raw JSON file",
+      "reuse_note": "No explicit license file found; public GitHub JSON dataset, verify before redistribution."
+    },
+    {
+      "name": "Blazor Myanmar Dream Dictionary GitHub Dataset",
+      "url": "https://github.com/sannlynnhtun-coding/BlazorWasm.DreamDictionary",
+      "status": "implemented",
+      "access": "GitHub raw JSON file",
+      "reuse_note": "No explicit license file found; public GitHub JSON dataset, verify before redistribution."
+    },
+    {
+      "name": "SomniumSage Dream Dataset",
+      "url": "https://github.com/makalin/SomniumSage",
+      "status": "implemented",
+      "access": "GitHub raw CSV file",
+      "reuse_note": "README states MIT, but no explicit license file was detected; verify before redistribution."
+    },
+    {
+      "name": "Dream_Dictionary Kaggle Dataset",
+      "url": "https://www.kaggle.com/datasets/yuvrajsanghai/dream-dictionary",
+      "status": "implemented",
+      "access": "Kaggle public dataset download API",
+      "reuse_note": "External paper reports Apache 2.0; verify Kaggle license before redistribution."
+    },
+    {
+      "name": "Dictionary of Dreams Kaggle Dataset",
+      "url": "https://www.kaggle.com/datasets/manswad/dictionary-of-dreams",
+      "status": "implemented",
+      "access": "Kaggle public dataset download API",
+      "reuse_note": "External paper reports Apache 2.0; verify Kaggle license before redistribution."
+    },
+    {
+      "name": "Wikisource 周公解夢",
+      "url": "https://zh.wikisource.org/wiki/%E5%91%A8%E5%85%AC%E8%A7%A3%E5%A4%A2",
+      "status": "implemented",
+      "access": "Wikisource raw action API",
+      "reuse_note": "Wikisource text; CC BY-SA terms apply to Wikisource contributions."
+    },
+    {
+      "name": "Fortunes and Dreams",
+      "url": "https://www.gutenberg.org/ebooks/54774",
+      "status": "implemented",
+      "access": "Project Gutenberg ebook text",
+      "reuse_note": "Project Gutenberg license; public-domain status depends on jurisdiction."
+    },
+    {
+      "name": "The Witches' Dream Book; and Fortune Teller",
+      "url": "https://www.gutenberg.org/ebooks/53879",
+      "status": "implemented",
+      "access": "Project Gutenberg ebook text",
+      "reuse_note": "Project Gutenberg license; public-domain status depends on jurisdiction."
+    },
+    {
+      "name": "The Golden Wheel Dream-book and Fortune-teller",
+      "url": "https://www.gutenberg.org/ebooks/60045",
+      "status": "implemented",
+      "access": "Project Gutenberg ebook text",
+      "reuse_note": "Project Gutenberg license; public-domain status depends on jurisdiction."
+    },
+    {
+      "name": "Dream Bible",
+      "url": "https://www.dreambible.com/",
+      "status": "registry_only",
+      "access": "public website",
+      "reuse_note": "Has copyright/intellectual property notices; excluded from bulk meaning extraction."
+    },
+    {
+      "name": "DreamDictionaryMiniProject Supabase dataset",
+      "url": "https://github.com/LinThitHtwe/DreamDictionaryMiniProject",
+      "status": "candidate_external_supabase",
+      "access": "Supabase public anon configuration in repository",
+      "reuse_note": "No local JSON body and no explicit license; external database not fetched."
+    },
+    {
+      "name": "Debottam dream-insights dataset",
+      "url": "https://github.com/Debottam1234567890/dream-insights",
+      "status": "rejected_no_interpretation_text",
+      "access": "GitHub raw CSV file",
+      "reuse_note": "Dataset contains dream descriptions and numeric features, but no meaning/interpretation text."
+    },
+    {
+      "name": "Artemidorus Oneirocritica / The Interpretation of Dreams",
+      "url": "https://quod.lib.umich.edu/e/eebo/A25906.0001.001",
+      "status": "candidate_pd_but_unstructured",
+      "access": "EEBO-TCP / historical full text",
+      "reuse_note": "Public-domain historical dream manual candidate, but not yet parsed into symbol-to-meaning entries."
+    },
+    {
+      "name": "Ibn Sirin Ta'bir al-Ru'ya Arabic originals",
+      "url": "https://archive.org/details/TafsirAhlamIbnSirin",
+      "status": "candidate_pd_no_structured_parse",
+      "access": "Internet Archive Arabic scan/OCR",
+      "reuse_note": "Classical Arabic public-domain candidate; OCR is unreliable and not yet parsed into safe symbol-to-meaning entries."
+    },
+    {
+      "name": "Dream Moods",
+      "url": "https://www.dreammoods.com/dreamdictionary/",
+      "status": "registry_only",
+      "access": "public website",
+      "reuse_note": "No open license confirmed; exclude until terms/license are verified."
+    },
+    {
+      "name": "DreamDictionary.org",
+      "url": "https://www.dreamdictionary.org/",
+      "status": "registry_only",
+      "access": "public website",
+      "reuse_note": "Has copyright notice; excluded from bulk meaning extraction."
+    },
+    {
+      "name": "Dreampedia",
+      "url": "https://dreampedia.com/dictionary",
+      "status": "registry_only",
+      "access": "public website",
+      "reuse_note": "No open license confirmed; exclude until terms/license are verified."
+    },
+    {
+      "name": "RoxyAPI Dreams API",
+      "url": "https://roxyapi.com/products/dreams-api",
+      "status": "api_candidate",
+      "access": "commercial API",
+      "reuse_note": "Use only with an API key and the provider's terms."
+    },
+    {
+      "name": "iDreams API",
+      "url": "https://www.idreams.app/developers",
+      "status": "api_candidate",
+      "access": "commercial/API access",
+      "reuse_note": "Use only with an API key and the provider's terms."
+    }
+  ]
+}

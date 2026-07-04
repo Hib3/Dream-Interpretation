@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>夢日記占い</title>
+    <meta
+      name="description"
+      content="夢日記を入力すると、夢占い辞書から該当する単語と意味を照合して文章で出力します。"
+    />
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <main class="app-shell">
+      <section class="workbench">
+        <div class="input-pane">
+          <div class="title-row">
+            <div>
+              <h1>夢日記占い</h1>
+              <p id="dataStatus">辞書を読み込み中...</p>
+            </div>
+            <button id="sampleBtn" type="button">例文</button>
+          </div>
+
+          <label for="dreamInput">夢日記</label>
+          <textarea
+            id="dreamInput"
+            spellcheck="true"
+            placeholder="見た夢をそのまま書いてください。例: 水の中を泳いでいたら、橋の向こうに白い犬がいて、空を飛ぶように逃げた。"
+          ></textarea>
+
+          <div class="controls">
+            <button id="interpretBtn" type="button">占う</button>
+            <button id="clearBtn" type="button">消去</button>
+          </div>
+        </div>
+
+        <div class="output-pane" aria-live="polite">
+          <section class="result-block">
+            <h2>占い結果</h2>
+            <p id="readingText">夢日記を入力して「占う」を押してください。</p>
+          </section>
+
+          <section class="result-block">
+            <div class="matched-title">
+              <h2>該当する単語</h2>
+              <span id="matchCount">0件</span>
+            </div>
+            <div id="matches" class="matches"></div>
+          </section>
+        </div>
+      </section>
+    </main>
+
+    <script src="app.js"></script>
+  </body>
+</html>
