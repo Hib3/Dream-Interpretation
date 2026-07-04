@@ -465,6 +465,60 @@ const THEMES = [
 
 const THEME_NEUTRAL = "二、三日、心の温度を観察してみてください。";
 
+/* 辞書の意味文から「結果句」だけを抜き出す(内容は辞書由来のまま文体を織り直すため)。
+ * 例:「夢の中で犬を見ることは、忠実な友人を意味します」→「忠実な友人」 */
+function extractEssence(text) {
+  const sentences = String(text || "").replace(/\s+/g, "").split(/(?<=[。!?！?])/).slice(0, 3);
+  for (const sentence of sentences) {
+    let core = sentence.replace(/[。!?！?]$/, "");
+    // 「夢の中で〜は、」などの前置きを外す
+    const lead = core.match(/^.{0,42}?(?:ことは|場合(?:は|、)|のは、?|は、|なら、?)(.+)$/);
+    if (lead && lead[1].length >= 6) core = lead[1];
+    core = core.replace(/^(それは|これは|あなたが|あなたの)/, "");
+    // 「〜を意味します」などの定型の尻尾を外す
+    const tail = core.match(
+      /^(.*?)(?:こと|の)?(?:を意味します|を意味する|を示しています|を示します|を表しています|を表します|と解釈されます|とされています|と言われています|の(?:兆し|兆候|前兆|しるし)です|を告げています|につながります)$/
+    );
+    if (tail && tail[1] && tail[1].length >= 4) core = tail[1];
+    core = core.replace(/^[、。・]+/, "").replace(/[、。]$/, "");
+    // 話者注記や相互参照は結果句ではないので次の文を試す
+    if (/(言いました|言われました|によると|曰く|参照)/.test(core)) continue;
+    if (core.length >= 6 && core.length <= 55) return core;
+    if (core.length > 55) {
+      const cut = core.slice(0, 44);
+      const pos = cut.lastIndexOf("、");
+      return (pos > 14 ? cut.slice(0, pos) : cut) + "…";
+    }
+  }
+  return "";
+}
+
+/* 象徴の組み合わせに対する読み(一般的な夢象徴の定石)。1回の占いで最大1行 */
+const PAIR_RULES = [
+  [["水", "海", "泳"], ["犬"], "水は心の流れ、犬は身近な信頼の象徴とされます。感情の波の中でも、そばで支えてくれる存在がいるようです。"],
+  [["落ち"], ["飛"], "「落ちる」不安と「飛ぶ」解放が同じ夜に同居しています。何かを手放すことへの怖れと憧れが、いま揺れているのでしょう。"],
+  [["蛇"], ["金", "光"], "蛇は変化と再生、金色の光は価値あるものの気配とされます。怖れの中にこそ、大切な転機が隠れているようです。"],
+  [["追いかけ", "追わ"], ["逃げ"], "追われて逃げる夢は、向き合うことを先送りしている何かの合図と読まれてきました。逃げた方角に、その正体のヒントがあります。"],
+  [["古い家", "古い建物"], ["蛇", "虫", "影"], "古い家はあなた自身の内面、そこに現れるものは長く目を向けていなかった感情とされます。掃除のつもりで、少し心の棚卸しを。"],
+  [["結婚", "指輪", "花嫁"], ["黒", "失く", "失う", "壊れ"], "誓いの象徴に影が差すのは、関係そのものより「うまくやらねば」という気負いの表れとされることが多いのです。"],
+  [["空"], ["飛"], "空を飛ぶ夢は、束縛からの解放や視野の広がりを映すとされます。着地の場面まで覚えていたら、それが次の目的地です。"],
+  [["歯"], ["抜け", "折れ"], "歯が欠ける夢は、自信や言葉にまつわる小さな不安の表れとされます。大事な話は、急がず整えてから。"],
+  [["水", "海", "川"], ["月", "星"], "水面に映る光は、揺れる感情の中にも確かな指針があることのしるしとされます。"],
+  [["死", "亡くな"], ["生", "赤ちゃん", "誕生"], "死と誕生が並ぶ夢は、終わりではなく入れ替わりの象徴とされます。一区切りの先に、新しい始まりが待っています。"],
+  [["階段", "登る", "上る"], ["落ち", "降り"], "昇り降りの夢は、目標との距離の測り直しとされます。一段抜かしではなく、一段ずつで大丈夫。"],
+  [["雨", "嵐", "雷"], ["家", "屋根"], "荒れる空と家の組み合わせは、外のざわめきから内側を守ろうとする心の働きとされます。"],
+];
+
+function findPairInsight(items, ctx) {
+  const hay = ctx.textFold + items.map((it) => it.row.term).join("");
+  for (const [groupA, groupB, insight] of PAIR_RULES) {
+    if (groupA.some((k) => hay.includes(k)) && groupB.some((k) => hay.includes(k))) {
+      return insight;
+    }
+  }
+  return "";
+}
+
 const POS_WORDS = ["吉", "幸運", "幸せ", "成功", "繁栄", "喜び", "順調", "達成", "利益", "豊か", "昇進", "健康", "平和", "安心", "祝福", "満足", "発展", "勝利", "良い", "希望", "恵まれ", "報われ"];
 const NEG_WORDS = ["凶", "不吉", "警告", "注意", "不安", "失敗", "病気", "トラブル", "危険", "損失", "悪い", "困難", "裏切り", "別れ", "苦し", "災い", "悩み", "対立", "喪失", "孤独", "悪意", "死"];
 
@@ -501,7 +555,7 @@ const INTRO_MOOD = {
   neutral: "いまのあなたの心を、静かに映す象徴たちです。",
 };
 
-function composeReading(items) {
+function composeReading(items, diaryText, ctx) {
   const concise = items.filter((it) => it.row.term.length <= 14);
   const pool = concise.length >= 3 ? concise : items;
   const top = pool.slice(0, 6);
@@ -518,43 +572,85 @@ function composeReading(items) {
           ? "mixed"
           : "neutral";
 
+  // 導入: あなた自身の夢のことばを引いて、象徴を並べる
+  const scene = String(diaryText || "").split(/[。!?！?\n]/)[0].trim();
+  const sceneCut = scene.length > 26 ? `${scene.slice(0, 24)}…` : scene;
   const names = top
     .slice(0, 3)
     .map((it) => `〈${it.row.term}〉`)
     .join("");
-  const intro = `……視えましたよ。あなたの夢を漂っていたのは、${names}。${INTRO_MOOD[mood]}`;
+  const intro = sceneCut
+    ? `『${sceneCut}』——その夜の景色から、${names}が浮かび上がってきました。${INTRO_MOOD[mood]}`
+    : `……視えましたよ。あなたの夢を漂っていたのは、${names}。${INTRO_MOOD[mood]}`;
 
-  // テーマ別の読み: 辞書の意味を「」で引用し(逸脱を防ぐ)、短い助言を添える
+  // 象徴の重なり(共起ルール)
+  const pairInsight = ctx ? findPairInsight(top, ctx) : "";
+
+  // テーマ別の読み: 辞書から抜き出した結果句を織り合わせ、助言を一文だけ添える
   const themeLines = [];
   const quoted = new Set();
   for (const slot of analyzeThemes(top).slice(0, 3)) {
-    // 見出しに出す象徴名は短いものを優先(訳文由来の長いフレーズを避ける)
-    const syms = slot.symbols
+    const symsNote = slot.symbols
       .slice()
       .sort((a, b) => a.length - b.length)
       .filter((t) => t.length <= 10)
-      .slice(0, 2);
-    const symNote = syms.length ? `(${syms.join("・")})` : "";
-    // 引用元はテーマ間で重複させず、寄与の大きい順に選ぶ
-    const source = slot.items
-      .sort((a, b) => b.hits - a.hits)
-      .map((s) => s.it)
-      .find((it) => !quoted.has(it));
-    let snippet = "";
-    if (source) {
-      quoted.add(source);
-      snippet = firstSentences((source.meanings || [])[0] || "", 80);
+      .slice(0, 2)
+      .join("・");
+
+    // 寄与の大きい順に、まだ引いていない象徴から結果句を最大2つ
+    const ranked = slot.items.sort((a, b) => b.hits - a.hits).map((s) => s.it);
+    const threads = [];
+    for (const it of ranked) {
+      if (threads.length >= 2) break;
+      if (quoted.has(it)) continue;
+      const essence = extractEssence((it.meanings || [])[0]);
+      if (!essence) continue;
+      quoted.add(it);
+      threads.push({ it, essence });
     }
+
     const advice =
       slot.polarity >= 1
         ? slot.theme.pos
         : slot.polarity <= -1
           ? slot.theme.neg
           : THEME_NEUTRAL;
-    const grounded = snippet
-      ? `〈${source.row.term}〉は「${snippet}」とされます。${advice}`
-      : advice;
-    themeLines.push(`✦${slot.theme.label}${symNote} ${grounded}`);
+
+    let body;
+    if (threads.length === 2) {
+      body = `〈${threads[0].it.row.term}〉は「${threads[0].essence}」、〈${threads[1].it.row.term}〉は「${threads[1].essence}」——そう夢は告げています。`;
+    } else if (threads.length === 1) {
+      body = `〈${threads[0].it.row.term}〉は「${threads[0].essence}」と告げています。`;
+    } else {
+      // 結果句が抜けない場合は原文を短く引用(辞書から離れない)
+      const src = ranked.find((it) => !quoted.has(it));
+      const snippet = src ? firstSentences((src.meanings || [])[0] || "", 80) : "";
+      if (snippet) {
+        quoted.add(src);
+        body = `〈${src.row.term}〉は「${snippet}」とされます。`;
+      } else {
+        body = "";
+      }
+    }
+
+    // 吉凶が割れているテーマは、反対側の声も並べて調停する
+    const mainTone = slot.polarity >= 1 ? 1 : slot.polarity <= -1 ? -1 : 0;
+    if (mainTone !== 0) {
+      const counter = ranked.find((it) => {
+        const t = it.tone === undefined ? it.row.tone : it.tone;
+        return t === -mainTone && !quoted.has(it);
+      });
+      if (counter) {
+        const counterEssence = extractEssence((counter.meanings || [])[0]);
+        if (counterEssence) {
+          quoted.add(counter);
+          body += `一方で〈${counter.row.term}〉は「${counterEssence}」とも。`;
+        }
+      }
+    }
+
+    if (!body && !advice) continue;
+    themeLines.push(`✦${slot.theme.label}${symsNote ? `(${symsNote})` : ""} ${body}${advice}`);
   }
 
   // テーマが読み取れない夢でも、辞書の意味そのものは必ず伝える
@@ -575,6 +671,7 @@ function composeReading(items) {
   const omen = `今夜のしるしは〈${omenTerm}〉。眠る前にひとつだけ、それを思い浮かべてみてください。`;
 
   const parts = [intro];
+  if (pairInsight) parts.push(`✧象徴の重なり — ${pairInsight}`);
   if (themeLines.length) parts.push(themeLines.join("\n"));
   parts.push(toneSummary(top));
   parts.push(omen);
@@ -695,7 +792,7 @@ async function interpret() {
       replay(readingRow, "mist-reveal");
       tellerSay("……うーん。");
     } else {
-      readingText.textContent = composeReading(items);
+      readingText.textContent = composeReading(items, text, ctx);
       renderTermChips(items);
       renderMatches(matchesEl, items);
       matchCount.textContent = `${items.length}件`;
