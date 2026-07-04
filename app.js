@@ -415,25 +415,170 @@ function toneSummary(items) {
   return "大きな吉凶よりも、いまの心の状態を映し出している夢のようです。印象に残った場面を手がかりに、ご自分の気持ちと向き合ってみてください。";
 }
 
+/* 象徴の意味テキストからテーマと吉凶を読み取り、統合した占い文を織り上げる。
+ * 辞書の原文は「該当する単語の辞書」に委ね、ここでは転載しない。 */
+
+const THEMES = [
+  {
+    key: "love",
+    label: "恋愛・絆",
+    kws: ["愛", "恋", "結婚", "恋人", "パートナー", "出会い", "絆", "ロマン", "異性", "縁", "花嫁", "花婿"],
+    pos: "素直なひとことが、思いのほか遠くまで届くでしょう。",
+    neg: "言葉を惜しまないことが、いちばんの守りになります。",
+  },
+  {
+    key: "work",
+    label: "仕事・挑戦",
+    kws: ["仕事", "職", "キャリア", "昇進", "事業", "努力", "成功", "達成", "目標", "挑戦", "勉強", "試験", "計画"],
+    pos: "温めている計画は、動かして良い頃合いです。",
+    neg: "焦らず、手順をひとつずつ確かめてください。",
+  },
+  {
+    key: "money",
+    label: "金運",
+    kws: ["お金", "金銭", "財", "富", "利益", "収入", "繁栄", "損失", "貧", "豊か", "宝"],
+    pos: "思わぬところから、小さな豊かさが舞い込みそうです。",
+    neg: "大きな決断は、少しだけ寝かせるのが吉です。",
+  },
+  {
+    key: "social",
+    label: "人とのあいだ",
+    kws: ["友人", "友達", "人間関係", "信頼", "仲間", "家族", "敵", "裏切", "嫉妬", "悪意", "援助", "助け", "周囲", "中傷", "親戚"],
+    pos: "頼ることは、弱さではありませんよ。",
+    neg: "噂ではなく、本人の言葉を確かめてください。",
+  },
+  {
+    key: "health",
+    label: "心と体",
+    kws: ["健康", "病", "体", "疲れ", "回復", "癒し", "休息", "ストレス", "心配", "不安", "安らぎ", "眠"],
+    pos: "眠りを大切にすれば、回復はさらに速まります。",
+    neg: "予定をひとつ減らす勇気を持ってください。",
+  },
+  {
+    key: "change",
+    label: "変化・転機",
+    kws: ["変化", "転機", "移行", "新しい", "始ま", "終わ", "旅", "別れ", "再会", "チャンス", "運命", "知らせ", "扉", "道"],
+    pos: "この変化は、あなたの味方です。",
+    neg: "急がなくても、季節は必ず移ろいますから。",
+  },
+];
+
+const THEME_NEUTRAL = "二、三日、心の温度を観察してみてください。";
+
+const POS_WORDS = ["吉", "幸運", "幸せ", "成功", "繁栄", "喜び", "順調", "達成", "利益", "豊か", "昇進", "健康", "平和", "安心", "祝福", "満足", "発展", "勝利", "良い", "希望", "恵まれ", "報われ"];
+const NEG_WORDS = ["凶", "不吉", "警告", "注意", "不安", "失敗", "病気", "トラブル", "危険", "損失", "悪い", "困難", "裏切り", "別れ", "苦し", "災い", "悩み", "対立", "喪失", "孤独", "悪意", "死"];
+
+function analyzeThemes(items) {
+  const agg = new Map();
+  for (const it of items) {
+    const text = (it.meanings || []).join("");
+    if (!text) continue;
+    const pos = POS_WORDS.reduce((n, w) => n + (text.includes(w) ? 1 : 0), 0);
+    const neg = NEG_WORDS.reduce((n, w) => n + (text.includes(w) ? 1 : 0), 0);
+    const polarity = it.tone !== 0 ? it.tone : Math.sign(pos - neg);
+    for (const theme of THEMES) {
+      let hits = 0;
+      for (const kw of theme.kws) {
+        if (text.includes(kw)) hits += 1;
+      }
+      if (hits === 0) continue;
+      const slot =
+        agg.get(theme.key) || { theme, score: 0, polarity: 0, symbols: [], items: [] };
+      slot.score += hits;
+      slot.polarity += polarity * hits;
+      if (!slot.symbols.includes(it.row.term)) slot.symbols.push(it.row.term);
+      slot.items.push({ it, hits });
+      agg.set(theme.key, slot);
+    }
+  }
+  return [...agg.values()].sort((a, b) => b.score - a.score);
+}
+
+const INTRO_MOOD = {
+  pos: "どれも、良い風が吹き込む前触れです。",
+  neg: "少し立ち止まって、と夢が囁いているようです。",
+  mixed: "光と影が、ひとつの夜に同居していますね。",
+  neutral: "いまのあなたの心を、静かに映す象徴たちです。",
+};
+
 function composeReading(items) {
   const concise = items.filter((it) => it.row.term.length <= 14);
   const pool = concise.length >= 3 ? concise : items;
-  const top = pool.slice(0, 5);
+  const top = pool.slice(0, 6);
+
+  const tones = top.map((it) => (it.tone === undefined ? it.row.tone : it.tone));
+  const posCount = tones.filter((t) => t === 1).length;
+  const negCount = tones.filter((t) => t === -1).length;
+  const mood =
+    posCount > 0 && negCount === 0
+      ? "pos"
+      : negCount > 0 && posCount === 0
+        ? "neg"
+        : posCount > 0 && negCount > 0
+          ? "mixed"
+          : "neutral";
+
   const names = top
     .slice(0, 3)
     .map((it) => `〈${it.row.term}〉`)
     .join("");
-  const intro = `……視えましたよ。あなたの夢からは、${names} といった象徴が浮かび上がっています。`;
+  const intro = `……視えましたよ。あなたの夢を漂っていたのは、${names}。${INTRO_MOOD[mood]}`;
 
-  const lines = [];
-  for (const it of top.slice(0, 4)) {
-    const body = it.meanings && it.meanings.length ? firstSentences(it.meanings[0]) : "";
-    if (!body) continue;
-    const tone = TONE_LABEL[it.tone] ? `【${TONE_LABEL[it.tone]}】` : "";
-    lines.push(`✦〈${it.row.term}〉${tone} ${body}`);
+  // テーマ別の読み: 辞書の意味を「」で引用し(逸脱を防ぐ)、短い助言を添える
+  const themeLines = [];
+  const quoted = new Set();
+  for (const slot of analyzeThemes(top).slice(0, 3)) {
+    // 見出しに出す象徴名は短いものを優先(訳文由来の長いフレーズを避ける)
+    const syms = slot.symbols
+      .slice()
+      .sort((a, b) => a.length - b.length)
+      .filter((t) => t.length <= 10)
+      .slice(0, 2);
+    const symNote = syms.length ? `(${syms.join("・")})` : "";
+    // 引用元はテーマ間で重複させず、寄与の大きい順に選ぶ
+    const source = slot.items
+      .sort((a, b) => b.hits - a.hits)
+      .map((s) => s.it)
+      .find((it) => !quoted.has(it));
+    let snippet = "";
+    if (source) {
+      quoted.add(source);
+      snippet = firstSentences((source.meanings || [])[0] || "", 80);
+    }
+    const advice =
+      slot.polarity >= 1
+        ? slot.theme.pos
+        : slot.polarity <= -1
+          ? slot.theme.neg
+          : THEME_NEUTRAL;
+    const grounded = snippet
+      ? `〈${source.row.term}〉は「${snippet}」とされます。${advice}`
+      : advice;
+    themeLines.push(`✦${slot.theme.label}${symNote} ${grounded}`);
   }
 
-  return [intro, lines.join("\n"), toneSummary(top)].filter(Boolean).join("\n\n");
+  // テーマが読み取れない夢でも、辞書の意味そのものは必ず伝える
+  if (themeLines.length === 0) {
+    for (const it of top.slice(0, 3)) {
+      const snippet = firstSentences((it.meanings || [])[0] || "", 90);
+      if (!snippet) continue;
+      const tone = TONE_LABEL[it.tone] ? `【${TONE_LABEL[it.tone]}】` : "";
+      themeLines.push(`✦〈${it.row.term}〉${tone} ${snippet}`);
+    }
+  }
+
+  // 今夜のしるし(強く出た象徴のうち、短く覚えやすいもの)
+  const omenTerm = top
+    .slice(0, 3)
+    .map((it) => it.row.term)
+    .sort((a, b) => a.length - b.length)[0];
+  const omen = `今夜のしるしは〈${omenTerm}〉。眠る前にひとつだけ、それを思い浮かべてみてください。`;
+
+  const parts = [intro];
+  if (themeLines.length) parts.push(themeLines.join("\n"));
+  parts.push(toneSummary(top));
+  parts.push(omen);
+  return parts.join("\n\n");
 }
 
 const NO_MATCH_MESSAGE =
@@ -547,7 +692,7 @@ async function interpret() {
       renderTermChips([]);
       matchedFold.hidden = true;
       readingRow.hidden = false;
-      replay(readingRow);
+      replay(readingRow, "mist-reveal");
       tellerSay("……うーん。");
     } else {
       readingText.textContent = composeReading(items);
@@ -556,7 +701,7 @@ async function interpret() {
       matchCount.textContent = `${items.length}件`;
       matchedFold.hidden = false;
       readingRow.hidden = false;
-      replay(readingRow);
+      replay(readingRow, "mist-reveal");
       tellerSay("……視えましたよ。");
       saveHistoryEntry(text, items);
       savedNote.hidden = false;
@@ -578,10 +723,10 @@ async function interpret() {
 
 /* ---------- 描画部品 ---------- */
 
-function replay(el) {
-  el.classList.remove("reveal");
+function replay(el, cls = "reveal") {
+  el.classList.remove("reveal", "mist-reveal");
   void el.offsetWidth;
-  el.classList.add("reveal");
+  el.classList.add(cls);
 }
 
 function renderTermChips(items) {
@@ -849,18 +994,36 @@ const views = {
   history: $("#view-history"),
 };
 
-function switchView(name) {
+let switchToken = 0;
+
+async function switchView(name) {
   if (!views[name]) name = "fortune";
+  const current = Object.keys(views).find((k) => !views[k].hidden);
+  if (current === name) return;
+  const token = ++switchToken;
+
   for (const tab of tabs) {
     const active = tab.dataset.view === name;
     tab.classList.toggle("active", active);
     tab.setAttribute("aria-selected", String(active));
   }
+
+  // いまのビューが靄に溶けてから、次のビューが霧の中から現れる
+  if (!reduceMotion && current) {
+    views[current].classList.add("leaving");
+    await delay(400);
+    views[current].classList.remove("leaving");
+    if (token !== switchToken) return;
+  }
+
   for (const [key, el] of Object.entries(views)) {
     el.hidden = key !== name;
-    el.classList.toggle("active", key === name);
-    if (key === name) replay(el);
+    el.classList.remove("enter", "leaving");
   }
+  const target = views[name];
+  void target.offsetWidth;
+  target.classList.add("enter");
+
   if (name === "history") renderHistory();
   if (name === "dictionary") renderDictSuggest();
   window.scrollTo({ top: 0, behavior: reduceMotion ? "auto" : "smooth" });
@@ -935,6 +1098,7 @@ if ("serviceWorker" in navigator) {
 /* ---------- 起動 ---------- */
 
 restoreDraft();
+views.fortune.classList.add("enter");
 const initialView = location.hash.replace("#", "");
 if (initialView && views[initialView]) switchView(initialView);
 tellerSay(GREETINGS[Math.floor(Math.random() * GREETINGS.length)]);
