@@ -10,26 +10,25 @@ Repository:
 
 ## What Is Published
 
-- `index.html`, `styles.css`, `app.js`
-- `data/dream_terms.min.json` for the browser app
-- `data/dream_terms.json` for readable full data
+- `index.html`, `styles.css`, `app.js`, `fx.js`
+- `data/ja/terms.min.json` — 日本語語彙インデックス(アプリが起動時に読み込む)
+- `data/ja/meanings-*.min.json` — 意味テキストのシャード(「占う」時に遅延取得)
+- `data/dream_terms.json.gz` for full data (original languages, gzip)
 - `data/source_registry.json` for source status
 
 `data/raw/` is intentionally ignored because it contains heavy source caches.
 
 ## Current Dataset
 
-- entries: 22150
-- duplicate `term_normalized`: 0
-- languages: `en`, `tr`, `zh-Hant`, `my`
-- implemented sources: 15
+- Japanese entries: 58577 (merged from 79114 original entries, sense-split per original term)
+- original languages: `en`, `tr`, `zh-Hant`, `my` (translated to Japanese)
+- implemented sources: 16
 
 ## Verify Locally
 
 ```powershell
 python scripts/build_dream_terms.py
-python -m json.tool data\dream_terms.json > $null
-python -m json.tool data\dream_terms.min.json > $null
+python -m json.tool data\ja\terms.min.json > $null
 python -m json.tool data\source_registry.json > $null
 node --check app.js
 ```
