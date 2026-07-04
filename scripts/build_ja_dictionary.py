@@ -33,8 +33,8 @@ from translate_dictionary import (  # noqa: E402
 )
 
 SHARD_COUNT = 32
-MAX_MEANINGS = 3
-MAX_MEANING_CANDIDATES = 8  # 統合時は多めに集め、表示語との関連順に並べてから絞る
+MAX_MEANINGS = 3  # 語義(sense)ごとの意味テキスト上限
+MAX_SENSES = 4  # 同一訳語に相乗りできる語義の上限
 MEANING_JA_LIMIT = 220
 TERM_JA_LIMIT = 60
 
@@ -114,6 +114,26 @@ def meaning_source_text(entry, meaning):
     return truncate_sentences(text, MEANING_LIMIT)
 
 
+# 「参照：○○」「（「○○」も参照）」のような相互参照ノートを除去
+CROSSREF_RES = [
+    re.compile(r"^（「[^」]{1,30}」[^）]{0,10}）\s*"),
+    re.compile(r"^参照[::]\s*[^。]{1,40}[。 ]\s*"),
+    re.compile(r"^見る[;;]\s*\S{1,20}\s*"),
+]
+
+
+def clean_meaning_ja(text, limit=MEANING_JA_LIMIT):
+    """Trim cross-reference notes and cut at a sentence boundary."""
+    text = clean_text(text)
+    for pattern in CROSSREF_RES:
+        text = pattern.sub("", text).strip()
+    if len(text) > limit:
+        cut = text[:limit]
+        pos = cut.rfind("。")
+        text = cut[: pos + 1] if pos >= limit * 0.4 else cut.rstrip() + "…"
+    return text.strip()
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--input", default="data/dream_terms.json")
@@ -148,44 +168,43 @@ def main():
             source_text = meaning_source_text(entry, meaning)
             if not source_text or source_text == clean_text(entry["term"]):
                 continue
-            text_ja = clean_text(translated(lang, source_text))
+            text_ja = clean_meaning_ja(clean_text(translated(lang, source_text)))
             if text_ja:
-                meanings_ja.append(
-                    {
-                        "t": text_ja[:MEANING_JA_LIMIT].strip(),
-                        "s": meaning.get("source_name") or "",
-                    }
-                )
+                meanings_ja.append(text_ja)
         # Proverb-style entries (my/zh) repeat the term as the meaning:
         # reuse the translated sentence when nothing else is available.
-        if not meanings_ja and len(term_ja) >= 12:
-            meanings_ja.append({"t": term_ja, "s": entry["sources"][0]["name"] if entry.get("sources") else ""})
+        if not meanings_ja and len(term_ja) >= 8:
+            meanings_ja.append(term_ja)
         if not meanings_ja:
             skipped["no_meaning"] += 1
             continue
 
-        slot = merged.setdefault(
-            key,
-            {"term": term_ja, "langs": [], "orig": [], "meanings": [], "sources": []},
-        )
+        slot = merged.setdefault(key, {"term": term_ja, "langs": [], "senses": []})
         # Prefer the shortest surface form as the display term.
         if len(term_ja) < len(slot["term"]):
             slot["term"] = term_ja
         if lang not in slot["langs"]:
             slot["langs"].append(lang)
+
+        # 同じ日本語訳でも原語が違えば別語義(sense)として保持する。
+        # 実行時に夢日記の文脈と照らして語義を選ぶ。
         orig = clean_text(entry["term"])[:48]
-        if orig not in slot["orig"] and len(slot["orig"]) < 3:
-            slot["orig"].append(orig)
-        for m in meanings_ja:
-            if len(slot["meanings"]) >= MAX_MEANING_CANDIDATES:
+        okey = normalize_ja(orig)
+        sense = next((s for s in slot["senses"] if s["okey"] == okey), None)
+        if sense is None:
+            if len(slot["senses"]) >= MAX_SENSES:
+                continue
+            sense = {"okey": okey, "o": orig, "m": [], "s": []}
+            slot["senses"].append(sense)
+        for text in meanings_ja:
+            if len(sense["m"]) >= MAX_MEANINGS:
                 break
-            head = m["t"][:36]
-            if not any(existing["t"][:36] == head for existing in slot["meanings"]):
-                slot["meanings"].append(m)
+            if not any(existing[:36] == text[:36] for existing in sense["m"]):
+                sense["m"].append(text)
         for src in entry.get("sources", [])[:2]:
             name = src.get("name")
-            if name and name not in slot["sources"] and len(slot["sources"]) < 3:
-                slot["sources"].append(name)
+            if name and name not in sense["s"] and len(sense["s"]) < 2:
+                sense["s"].append(name)
 
     items = sorted(merged.items())
     shard_size = math.ceil(len(items) / SHARD_COUNT)
@@ -196,26 +215,34 @@ def main():
     for i, (key, slot) in enumerate(items):
         shard_id = min(i // shard_size, SHARD_COUNT - 1)
         idx = len(shards[shard_id])
-        # 同じ訳語に統合された同綴り異義の意味は、表示語の漢字を含むものを先頭へ
+        # 表示語の文字を含む語義を先頭へ(既定の語義として扱う)
         term_runs = [r for r in KEYWORD_RE.findall(slot["term"]) if r not in STOP_KEYWORDS]
-        slot["meanings"].sort(
-            key=lambda m: 0 if any(run in m["t"] for run in term_runs) else 1
+        slot["senses"].sort(
+            key=lambda s: 0 if any(run in t for run in term_runs for t in s["m"]) else 1
         )
-        slot["meanings"] = slot["meanings"][:MAX_MEANINGS]
-        tone = tone_of([m["t"] for m in slot["meanings"]], slot["orig"])
-        # Row: [displayTerm, tone, languages, originalTerms, shard, index]
-        term_rows.append([slot["term"], tone, ",".join(slot["langs"]), slot["orig"][0], shard_id, idx])
-        shards[shard_id].append(
-            {"m": [m["t"] for m in slot["meanings"]], "src": slot["sources"][:2]}
+        senses_out = []
+        for sense in slot["senses"]:
+            tone = tone_of(sense["m"], [sense["o"]])
+            senses_out.append({"o": sense["o"], "t": tone, "m": sense["m"], "s": sense["s"]})
+        # Row: [displayTerm, tone, languages, originalTerm, shard, index]
+        term_rows.append(
+            [slot["term"], senses_out[0]["t"], ",".join(slot["langs"]), senses_out[0]["o"], shard_id, idx]
         )
+        shards[shard_id].append(senses_out)
 
     lang_counts = {}
     for _, slot in items:
         for lang in slot["langs"]:
             lang_counts[lang] = lang_counts.get(lang, 0) + 1
 
+    # 内容ハッシュでシャードURLをバージョニングし、更新時のキャッシュずれを防ぐ
+    build_id = hashlib.sha1(
+        json.dumps([term_rows, shards], ensure_ascii=False).encode("utf-8")
+    ).hexdigest()[:10]
+
     index = {
-        "v": 1,
+        "v": 2,
+        "build": build_id,
         "entry_count": len(term_rows),
         "source_entry_count": data["entry_count"],
         "language_counts": lang_counts,

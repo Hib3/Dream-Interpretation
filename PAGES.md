@@ -20,7 +20,7 @@ Repository:
 
 ## Current Dataset
 
-- Japanese entries: 15647 (merged from 22150 original entries)
+- Japanese entries: 15907 (merged from 22150 original entries, sense-split per original term)
 - original languages: `en`, `tr`, `zh-Hant`, `my` (translated to Japanese)
 - implemented sources: 15
 

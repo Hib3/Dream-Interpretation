@@ -35,7 +35,7 @@ python3 scripts/build_ja_dictionary.py --cache /path/to/translation_cache.jsonl
 - `data/ja/terms.min.json`: 日本語語彙インデックス(起動時に読み込む軽量ファイル)
 - `data/ja/meanings-NN.min.json`: 意味テキストのシャード32本(「占う」時に必要分のみ取得)
 
-翻訳には公開の Google 翻訳 Web エンドポイント(client=gtx)を利用しています。同じ日本語訳になった原語エントリは1語に統合され、意味の文中の吉凶語から簡易トーン(吉/中/注意)を付与します。
+翻訳には公開の Google 翻訳 Web エンドポイント(client=gtx)を利用しています。同じ日本語訳になった原語エントリは1語に統合されますが、原語が異なるものは語義(sense)として分けて保持され、アプリ側が夢日記の文脈と意味文の重なりからどの語義かを判定します(例:「ビル」= building / bill、「飛ぶ」= flying / flies)。意味の文中の吉凶語から語義ごとに簡易トーン(吉/中/注意)を付与します。
 - `data/raw/gutenberg_926_ten_thousand_dreams_interpreted.txt`: 取得した原文キャッシュ
 - `data/raw/hf_samvlad_dream_decoder_dataset_rows.json`: 取得したHugging Faceデータキャッシュ
 - `data/raw/hf_teragron_dream_interpretation_rows.json`: 取得したHugging Faceデータキャッシュ
