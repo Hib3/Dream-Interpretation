@@ -91,6 +91,7 @@ const KANA_SYNONYMS = [
 const STOP_KW = new Set([
   "夢", "見", "意味", "兆", "暗示", "象徴", "解釈", "占",
   "最後", "中", "上", "下", "前", "後", "時", "事", "者", "方", "分", "回", "向",
+  "私", "彼", "彼女", // 人称は夢の象徴として扱わない
 ]);
 const STOP_LATIN = new Set([
   "the", "and", "you", "your", "for", "with", "from", "into", "that", "this",
@@ -385,17 +386,22 @@ async function attachMeanings(items, ctx) {
 
 /* ---------- 占い文の組み立て ---------- */
 
-function firstSentences(text, limit = 110) {
+/* 意味テキストを、完結した文・節の単位で要約する(中途切断はしない)。
+ * まとまりが作れない場合は空文字を返し、呼び出し側は引用を諦める。 */
+function summarizeMeaning(text, limit = 110) {
   const clean = String(text || "").replace(/\s+/g, " ").trim();
-  const parts = clean.split(/(?<=[。!?！?])/);
+  const parts = clean.split(/(?<=[。!?！?])/).filter((p) => p.trim());
   let out = "";
   for (const part of parts) {
+    if (!out && part.length > limit) {
+      // 一文目から長すぎる: 節単位で完結する範囲に要約する
+      const packed = packClauses(part, limit - 2);
+      return packed ? `${packed}。` : "";
+    }
     if (out && out.length + part.length > limit) break;
     out += part;
     if (out.length >= limit * 0.55) break;
   }
-  if (!out) out = clean.slice(0, limit);
-  if (out.length > limit * 1.6) out = `${out.slice(0, Math.floor(limit * 1.5))}…`;
   return out.trim();
 }
 
@@ -465,6 +471,47 @@ const THEMES = [
 
 const THEME_NEUTRAL = "二、三日、心の温度を観察してみてください。";
 
+/* 節が意味的に完結しているか(接続形・助詞で終わっていないか) */
+function clauseComplete(text) {
+  if (/(こと|もの|ため|とき|よう|さま)$/.test(text)) return true;
+  if (/[してにをがはでとやのへ、か]$/.test(text)) return false;
+  // 「〜になり」「〜され」など連用形で終わる節は文が続いてしまう
+  if (/(なり|あり|おり|され|でき|しまい|ており|に入り)$/.test(text)) return false;
+  return true;
+}
+
+// 列挙文の確実な区切り(「〜こと」「〜ます」等)。これがある文はここまで戻す
+const STRONG_END = /(こと|です|ます|でしょう|ください|しれません)$/;
+
+/* 長い文を「、」区切りの節単位で要約する。
+ * 完結する節だけを頭から詰め、途中で切れる節は丸ごと捨てる(中途切断をしない)。
+ * 完結単位が作れなければ空文字を返し、呼び出し側は引用自体を諦める。 */
+function packClauses(sentence, limit) {
+  const segs = String(sentence || "")
+    .replace(/[。!?！?]$/, "")
+    .split("、")
+    .map((s) => s.trim())
+    .filter(Boolean);
+  let out = "";
+  for (const seg of segs) {
+    const candidate = out ? `${out}、${seg}` : seg;
+    if (candidate.length > limit) break;
+    out = candidate;
+  }
+  // 「〜こと、〜こと、…」の列挙文なら、確実な区切りまで戻す
+  if (segs.some((seg) => STRONG_END.test(seg))) {
+    while (out && !STRONG_END.test(out)) {
+      const pos = out.lastIndexOf("、");
+      out = pos === -1 ? "" : out.slice(0, pos);
+    }
+  }
+  while (out && !clauseComplete(out)) {
+    const pos = out.lastIndexOf("、");
+    out = pos === -1 ? "" : out.slice(0, pos);
+  }
+  return out.length >= 8 ? out : "";
+}
+
 /* 辞書の意味文から「結果句」だけを抜き出す(内容は辞書由来のまま文体を織り直すため)。
  * 例:「夢の中で犬を見ることは、忠実な友人を意味します」→「忠実な友人」 */
 function extractEssence(text) {
@@ -479,15 +526,18 @@ function extractEssence(text) {
     const tail = core.match(
       /^(.*?)(?:こと|の)?(?:を意味します|を意味する|を示しています|を示します|を表しています|を表します|と解釈されます|とされています|と言われています|の(?:兆し|兆候|前兆|しるし)です|を告げています|につながります)$/
     );
-    if (tail && tail[1] && tail[1].length >= 4) core = tail[1];
-    core = core.replace(/^[、。・]+/, "").replace(/[、。]$/, "");
+    if (tail && tail[1] && tail[1].length >= 2) core = tail[1];
+    core = core
+      .replace(/[「」『』()（）]/g, "")
+      .replace(/^[、。・]+/, "")
+      .replace(/[、。]$/, "");
     // 話者注記や相互参照は結果句ではないので次の文を試す
     if (/(言いました|言われました|によると|曰く|参照)/.test(core)) continue;
-    if (core.length >= 6 && core.length <= 55) return core;
+    if (core.length >= 6 && core.length <= 55 && clauseComplete(core)) return core;
     if (core.length > 55) {
-      const cut = core.slice(0, 44);
-      const pos = cut.lastIndexOf("、");
-      return (pos > 14 ? cut.slice(0, pos) : cut) + "…";
+      // 中途で切らず、完結する節だけを残して要約。できなければ次の文へ
+      const packed = packClauses(core, 48);
+      if (packed) return packed;
     }
   }
   return "";
@@ -520,7 +570,7 @@ function findPairInsight(items, ctx) {
 }
 
 const POS_WORDS = ["吉", "幸運", "幸せ", "成功", "繁栄", "喜び", "順調", "達成", "利益", "豊か", "昇進", "健康", "平和", "安心", "祝福", "満足", "発展", "勝利", "良い", "希望", "恵まれ", "報われ"];
-const NEG_WORDS = ["凶", "不吉", "警告", "注意", "不安", "失敗", "病気", "トラブル", "危険", "損失", "悪い", "困難", "裏切り", "別れ", "苦し", "災い", "悩み", "対立", "喪失", "孤独", "悪意", "死"];
+const NEG_WORDS = ["凶", "不吉", "警告", "注意", "不安", "失敗", "病気", "トラブル", "危険", "損失", "悪い", "困難", "裏切り", "別れ", "苦し", "災い", "悩み", "対立", "喪失", "孤独", "悪意", "死", "不運", "不幸"];
 
 function analyzeThemes(items) {
   const agg = new Map();
@@ -590,7 +640,12 @@ function composeReading(items, diaryText, ctx) {
 
   // 導入: あなた自身の夢のことばを引いて、象徴を並べる
   const scene = String(diaryText || "").split(/[。!?！?\n]/)[0].trim();
-  const sceneCut = scene.length > 26 ? `${scene.slice(0, 24)}…` : scene;
+  let sceneCut = scene;
+  if (scene.length > 26) {
+    const head = scene.slice(0, 24);
+    const pos = head.lastIndexOf("、");
+    sceneCut = `${pos > 8 ? head.slice(0, pos) : head}…`;
+  }
   const names = top
     .slice(0, 3)
     .map((it) => `〈${it.row.term}〉`)
@@ -605,6 +660,7 @@ function composeReading(items, diaryText, ctx) {
   // テーマ別の読み: 辞書から抜き出した結果句を織り合わせ、助言を一文だけ添える
   const themeLines = [];
   const quoted = new Set();
+  const usedAdvice = new Set();
   const themeSlots = analyzeThemes(top);
   for (const slot of themeSlots.slice(0, 3)) {
     const symsNote = slot.symbols
@@ -614,14 +670,33 @@ function composeReading(items, diaryText, ctx) {
       .slice(0, 2)
       .join("・");
 
-    // 寄与の大きい順に、まだ引いていない象徴から結果句を最大2つ
-    const ranked = slot.items.sort((a, b) => b.hits - a.hits).map((s) => s.it);
+    const mainTone = slot.polarity >= 1 ? 1 : slot.polarity <= -1 ? -1 : 0;
+
+    // 引用元の選択: テーマの吉凶と同じ向きの象徴を優先し(引用と助言の食い違いを防ぐ)、
+    // 訳文由来の長いフレーズ(12文字超)は引用元にしない
+    const toneOf = (it) => (it.tone === undefined ? it.row.tone : it.tone);
+    const ranked = slot.items
+      .sort((a, b) => {
+        const ta = mainTone === 0 ? 0 : toneOf(a.it) === mainTone ? 1 : toneOf(a.it) === 0 ? 0 : -1;
+        const tb = mainTone === 0 ? 0 : toneOf(b.it) === mainTone ? 1 : toneOf(b.it) === 0 ? 0 : -1;
+        return tb - ta || b.hits - a.hits;
+      })
+      .map((s) => s.it);
+    const quotableTerm = (it) =>
+      it.row.term.length <= 12 && !/(ください|します|ました|ます|です)/.test(it.row.term);
     const threads = [];
     for (const it of ranked) {
       if (threads.length >= 2) break;
-      if (quoted.has(it)) continue;
+      if (quoted.has(it) || !quotableTerm(it)) continue;
       const essence = extractEssence((it.meanings || [])[0]);
       if (!essence) continue;
+      // 引用文そのものの吉凶が助言と逆向きなら、この象徴からは引用しない
+      if (mainTone !== 0) {
+        const essTone =
+          (POS_WORDS.some((w) => essence.includes(w)) ? 1 : 0) -
+          (NEG_WORDS.some((w) => essence.includes(w)) ? 1 : 0);
+        if (essTone === -mainTone) continue;
+      }
       quoted.add(it);
       threads.push({ it, essence });
     }
@@ -640,8 +715,8 @@ function composeReading(items, diaryText, ctx) {
       body = `〈${threads[0].it.row.term}〉は「${threads[0].essence}」と告げています。`;
     } else {
       // 結果句が抜けない場合は原文を短く引用(辞書から離れない)
-      const src = ranked.find((it) => !quoted.has(it));
-      const snippet = src ? firstSentences((src.meanings || [])[0] || "", 80) : "";
+      const src = ranked.find((it) => !quoted.has(it) && quotableTerm(it));
+      const snippet = src ? summarizeMeaning((src.meanings || [])[0] || "", 80) : "";
       if (snippet) {
         quoted.add(src);
         body = `〈${src.row.term}〉は「${snippet}」とされます。`;
@@ -651,12 +726,10 @@ function composeReading(items, diaryText, ctx) {
     }
 
     // 吉凶が割れているテーマは、反対側の声も並べて調停する
-    const mainTone = slot.polarity >= 1 ? 1 : slot.polarity <= -1 ? -1 : 0;
     if (mainTone !== 0) {
-      const counter = ranked.find((it) => {
-        const t = it.tone === undefined ? it.row.tone : it.tone;
-        return t === -mainTone && !quoted.has(it);
-      });
+      const counter = ranked.find(
+        (it) => toneOf(it) === -mainTone && !quoted.has(it) && quotableTerm(it)
+      );
       if (counter) {
         const counterEssence = extractEssence((counter.meanings || [])[0]);
         if (counterEssence) {
@@ -666,14 +739,16 @@ function composeReading(items, diaryText, ctx) {
       }
     }
 
+    if (!body && (advice === THEME_NEUTRAL || usedAdvice.has(advice))) continue;
     if (!body && !advice) continue;
+    usedAdvice.add(advice);
     themeLines.push(`✦${slot.theme.label}${symsNote ? `(${symsNote})` : ""} ${body}${advice}`);
   }
 
   // テーマが読み取れない夢でも、辞書の意味そのものは必ず伝える
   if (themeLines.length === 0) {
     for (const it of top.slice(0, 3)) {
-      const snippet = firstSentences((it.meanings || [])[0] || "", 90);
+      const snippet = summarizeMeaning((it.meanings || [])[0] || "", 90);
       if (!snippet) continue;
       const tone = TONE_LABEL[it.tone] ? `【${TONE_LABEL[it.tone]}】` : "";
       themeLines.push(`✦〈${it.row.term}〉${tone} ${snippet}`);
