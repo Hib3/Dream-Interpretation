@@ -186,7 +186,6 @@ async function loadData() {
     state.loaded = true;
     dataStatus.textContent = `日本語辞書 ${data.entry_count.toLocaleString()} 語(原典 ${data.source_entry_count.toLocaleString()} 項目 / ${data.source_count} ソースを翻訳・統合)`;
     renderDictSuggest();
-    prefetchShards();
   } catch (error) {
     dataStatus.textContent = "辞書の読み込みに失敗しました";
     tellerSay(`辞書が開けないようです…。${error.message}`);
@@ -202,26 +201,63 @@ async function getShard(shardId) {
   return rows;
 }
 
-function prefetchShards() {
-  // 省データ設定・遅い回線では全シャード(約40MB)の先読みをしない
-  const conn = navigator.connection;
-  if (conn && (conn.saveData || /(^|-)2g/.test(conn.effectiveType || ""))) return;
-  let next = 0;
-  const idle =
-    typeof window.requestIdleCallback === "function"
-      ? (fn) => window.requestIdleCallback(fn)
-      : (fn) => setTimeout(fn, 400);
-  const step = () => {
-    while (next < state.shardCount && state.shards.has(next)) next += 1;
-    if (next >= state.shardCount) return;
-    getShard(next)
-      .catch(() => {})
-      .finally(() => idle(step));
-  };
-  idle(step);
+/* ---------- 照合エンジン ---------- */
+
+const WORD_SEGMENTER = typeof Intl.Segmenter === "function"
+  ? new Intl.Segmenter("ja", { granularity: "word" }) : null;
+const NARRATIVE_WORDS = new Set(["見る", "見た", "眺め", "会う", "怖い", "安心する", "穏やかな", "最後", "夢"]);
+const EVENT_RULES = [
+  ["追われている", /追いかけられ|追われ|追い回され|追って(?:き|く)/gu],
+  ["落ちる", /落ち|落下|転落/gu, /歯.{0,8}(?:落ち|抜け)|落ち着|恋に落ち|雨.{0,5}落ち/u],
+  ["飛ぶ", /飛ん|飛ぶ|浮遊/gu, /飛ぶよう|飛ぶみたい|飛行機|鳥.{0,8}飛/u],
+  ["泳ぐ", /泳い|泳ぐ|泳ぎ/gu],
+  ["溺れる", /溺れ|おぼれ/gu],
+  ["歯が抜ける", /歯.{0,8}(?:抜け|ぬけ|欠け|折れ)/gu],
+];
+
+function isAsserted(text, index, length) {
+  const after = text.slice(index + length);
+  if (/^(?:が|は|を)なくな/u.test(after)) return true; // なくなる出来事と、存在の否定を区別する
+  if (/^(?:[はがもをに]|て|で|い|く|れ|ら|じゃ)*(?:ない|なかった|なく|ず|ません|しない|しなかった)/u.test(after)) return false;
+  if (/^(?:を|は)?(?:見|見て|見えて|出て)(?:い|こ)?(?:ない|なかった|ず)/u.test(after)) return false;
+  if (/^(?:る|た|だ)?(?:ように|みたいに|わけではない|かどうか)/u.test(after)) return false;
+  return !/(?:not|never|no)\s+$/iu.test(text.slice(0, index));
 }
 
-/* ---------- 照合エンジン ---------- */
+function narrativeScenes(text) {
+  let reality = false;
+  return text.split(/[。！？!?\n、]/u).filter(Boolean).flatMap((raw) => {
+    if (/現実では|普段は|起きてから/u.test(raw)) reality = true;
+    if (/夢では|夢の中/u.test(raw)) reality = false;
+    if (reality) return [];
+    const folded = phraseKey(raw);
+    const bounds = new Set([0, folded.length]);
+    if (WORD_SEGMENTER) for (const s of WORD_SEGMENTER.segment(folded)) {
+      bounds.add(s.index); bounds.add(s.index + s.segment.length);
+    }
+    const events = new Set();
+    for (const [term, pattern, exclude] of EVENT_RULES) {
+      if (exclude?.test(raw)) continue;
+      if ([...raw.matchAll(pattern)].some((m) => isAsserted(raw, m.index, m[0].length))) events.add(term);
+    }
+    return [{ raw, folded, bounds, events }];
+  });
+}
+
+function sceneMatches(row, scene) {
+  if (scene.events.has(row.term)) return true;
+  // 動詞の活用と否定は専用ルールに任せ、語幹だけの一致では補わない。
+  if (EVENT_RULES.some(([term]) => term === row.term)) return false;
+  const variants = [row.phraseFold, ...KANA_SYNONYMS.filter(([, kanji]) => kanji === row.term).map(([kana]) => kana)];
+  return variants.some((term) => {
+    let at = scene.folded.indexOf(term);
+    while (term && at !== -1) {
+      if ((!WORD_SEGMENTER || (scene.bounds.has(at) && scene.bounds.has(at + term.length))) && isAsserted(scene.folded, at, term.length)) return true;
+      at = scene.folded.indexOf(term, at + 1);
+    }
+    return false;
+  });
+}
 
 function buildContext(text) {
   const textFold = phraseKey(text);
@@ -255,51 +291,20 @@ function buildContext(text) {
     }
   }
   const textPad = ` ${normalize(text).replace(/[^\p{Letter}\p{Number}]+/gu, " ").trim()} `;
-  return { textFold, textPad, kanjiRuns, otherSet, latinSet };
+  return { textFold, textPad, kanjiRuns, otherSet, latinSet, scenes: narrativeScenes(text), raw: text };
 }
 
 function findMatches(ctx) {
-  const { textFold, textPad, kanjiRuns, otherSet, latinSet } = ctx;
-
   const scored = [];
   for (const row of state.rows) {
-    let score = 0;
-
-    const phraseHit = row.latinPhrase
-      ? row.latinPhrase.length >= 3 && textPad.includes(` ${row.latinPhrase} `)
-      : row.phraseFold.length >= 3 && textFold.includes(row.phraseFold);
-    if (phraseHit) score += 6 + row.phraseFold.length * 2;
-
-    let jaMatched = 0;
-    let jaTotal = 0;
-    for (const kw of row.kwKanji) {
-      const w = kw.length * kw.length * 2;
-      jaTotal += w;
-      if (kanjiRuns.some((run) => run.includes(kw))) jaMatched += w;
-    }
-    for (const kw of row.kwOther) {
-      const w = kw.length * kw.length * 1.2;
-      jaTotal += w;
-      if (otherSet.has(kw) || (kw.length >= 3 && textFold.includes(kw))) jaMatched += w;
-    }
-
-    let latinMatched = 0;
-    let latinTotal = 0;
-    for (const kw of row.kwLatin) {
-      const w = kw.length * 1.5;
-      latinTotal += w;
-      if (latinSet.has(kw)) latinMatched += w;
-    }
-
-    const jaFull = jaTotal > 0 && jaMatched === jaTotal;
-    const jaOk = jaTotal > 0 && (jaFull || (jaMatched / jaTotal >= 0.6 && jaMatched >= 6));
-    const latinOk = latinTotal > 0 && latinMatched / latinTotal >= 0.6;
-    if (!phraseHit && !jaOk && !latinOk) continue;
-
-    score += (jaOk ? jaMatched : 0) + (latinOk ? latinMatched : 0);
-    if (jaFull && row.term.length <= 2) score += 6; // 「犬」「蛇」など単独の象徴を優先
-    if (score <= 0) continue;
-    scored.push({ row, score, phraseHit, jaFull });
+    if (NARRATIVE_WORDS.has(row.term) || STOP_KW.has(row.term) || /^[ぁ-ん]$/u.test(row.term)) continue;
+    const scenes = ctx.scenes.filter((scene) => sceneMatches(row, scene));
+    if (!scenes.length) continue;
+    const event = scenes.some((scene) => scene.events.has(row.term));
+    const emphasis = scenes.some((scene) => /一番|いちばん|特に|印象|何度も|繰り返/u.test(scene.raw));
+    const action = row.term === "橋" && scenes.some((scene) => assertedPattern(scene.raw, /渡っ|渡る/gu));
+    const score = 5 + Math.min(row.term.length, 8) + (event ? 12 : 0) + (action ? 6 : 0) + (emphasis ? 12 : 0) + Math.min(scenes.length - 1, 3);
+    scored.push({ row, score, phraseHit: true, jaFull: true, scene: scenes[0].raw });
   }
 
   scored.sort(
@@ -381,7 +386,49 @@ async function attachMeanings(items, ctx) {
     it.tone = sense ? sense.t : it.row.tone;
     it.orig = sense ? sense.o : it.row.orig;
     it.sources = sense ? sense.s : [];
+    if (it.scene || REVIEWED_SENSES[it.row.term]) {
+      const reviewed = REVIEWED_SENSES[it.row.term];
+      if (reviewed) {
+        it.meanings = [reviewed.text];
+        it.orig = reviewed.orig;
+        it.sources = [reviewed.source + "（原文確認・日本語要約）"];
+        it.tone = 0;
+        if (it.row.term === "水") {
+          if (assertedPattern(it.scene || "", /穏やか|静か/gu)) it.meanings = ["穏やかな水は、気持ちの落ち着きや安心感の象徴として読めます。"];
+          else if (assertedPattern(it.scene || "", /荒れ|荒波|大波/gu)) it.meanings = ["荒れた水は、感情が大きく揺れたり、抱えきれなくなったりする感覚の象徴として読めます。"];
+        }
+      } else {
+        it.meanings = selectPassages(it.meanings, it.scene);
+        it.tone = 0; // 語全体の吉凶を、選んだ一場面へ無条件に引き継がない
+      }
+    }
   }
+}
+
+const REVIEWED_SENSES = {
+  "友達": {orig:"Friend", source:"Dream_Dictionary Kaggle Dataset", quote:"You may see qualities in them you want to incorporate within yourself.", text:"友人は、その人の中に見ている性格や、自分も大切にしたい一面を振り返る手がかりになります。"},
+  "泳ぐ": {orig:"swimming", source:"Dream_Dictionary Kaggle Dataset", quote:"Swimming brings your focus on managing your emotional stability in your life.", text:"泳ぐ場面は、自分の感情とどう付き合い、進んでいくかを考える手がかりになります。楽に泳げたか、苦しかったかによって読み方も変わります。"},
+  "追われている": {orig:"Being Chased", source:"HeartYearning Dream Symbols Dataset", quote:"Avoidance of a person, responsibility, or emotion.", text:"追われる場面は、人との関係や責任、向き合いにくい感情から距離を置きたい気持ちの象徴として読めます。"},
+  "落ちる": {orig:"Falling", source:"HeartYearning Dream Symbols Dataset", quote:"Insecurity, loss of support, or feeling out of control.", text:"落下する場面には、支えを失う不安や、自分では状況を動かせない感覚を重ねる読み方があります。"},
+  "飛ぶ": {orig:"Flying", source:"HeartYearning Dream Symbols Dataset", quote:"Desire for freedom, escape, or a higher perspective on life.", text:"空を飛ぶ場面は、自由になりたい願いや、今いる場所から離れて物事を見直したい気持ちにつながります。"},
+  "歯が抜ける": {orig:"Teeth", source:"Dream_Dictionary Kaggle Dataset", quote:"Sometimes it can represent some sort of personal loss or feelings of inadequacy.", text:"歯が抜ける場面には、大切なものを失う不安や、自信の揺らぎを重ねる読み方があります。"},
+  "水": {orig:"Water", source:"HeartYearning Dream Symbols Dataset", quote:"Emotional state. Calm water means peace; turbulent water means overwhelmed.", text:"水の様子は、感情を読む手がかりです。穏やかな水は落ち着き、荒れた水は感情を抱えきれない感覚の象徴として読まれます。"},
+  "橋": {orig:"Bridge", source:"Dream_Dictionary Kaggle Dataset", quote:"You might be transitioning from one place to another", text:"橋は、人や場所をつなぐことや、今までの段階から次へ移ることの象徴として読めます。"},
+  "犬": {orig:"Dogs", source:"Dream_Dictionary Kaggle Dataset", quote:"companionship, loyalty, protectors, guardians", text:"犬には、親しさや信頼、守ってくれる存在の象徴という読み方があります。ただし、犬との関係や行動によって受け止め方は変わります。"},
+  "溺れる": {orig:"Drowning", source:"Dream_Dictionary Kaggle Dataset", quote:"feelings of being emotionally overwhelmed, burdened or consumed", text:"溺れる場面は、感情や負担を抱えきれない感覚の象徴として読めます。誰が溺れていたか、助かったかどうかも大切です。"},
+};
+
+function assertedPattern(text, pattern) {
+  return [...String(text).matchAll(pattern)].some((m) => isAsserted(text, m.index, m[0].length));
+}
+
+function selectPassages(meanings, scene) {
+  const words = extractRunsNorm(normalize(scene)).filter((w) => w.length >= 2 && !STOP_KW.has(w));
+  const candidates = meanings.flatMap((m) => String(m).split(/(?<=[。！？])/u)).map((s) => s.trim())
+    .filter((s) => s.length >= 8 && s.length <= 180 && /[。！？]$/u.test(s))
+    .filter((s) => !/現在の課題|善と善|参照|によると|ナブルシ|(.{3,12})、\1、\1/u.test(s));
+  return [...new Set(candidates)].map((text) => ({text, score: words.reduce((n,w) => n + (text.includes(w) ? w.length : 0), 0)}))
+    .sort((a,b) => b.score - a.score).slice(0, 1).map((v) => v.text);
 }
 
 /* ---------- 占い文の組み立て ---------- */
@@ -622,159 +669,41 @@ const MOOD_EPITHET = {
 };
 
 function composeReading(items, diaryText, ctx) {
-  const concise = items.filter((it) => it.row.term.length <= 14);
-  const pool = concise.length >= 3 ? concise : items;
-  const top = pool.slice(0, 6);
-
-  const tones = top.map((it) => (it.tone === undefined ? it.row.tone : it.tone));
-  const posCount = tones.filter((t) => t === 1).length;
-  const negCount = tones.filter((t) => t === -1).length;
-  const mood =
-    posCount > 0 && negCount === 0
-      ? "pos"
-      : negCount > 0 && posCount === 0
-        ? "neg"
-        : posCount > 0 && negCount > 0
-          ? "mixed"
-          : "neutral";
-
-  // 導入: あなた自身の夢のことばを引いて、象徴を並べる
-  const scene = String(diaryText || "").split(/[。!?！?\n]/)[0].trim();
-  let sceneCut = scene;
-  if (scene.length > 26) {
-    const head = scene.slice(0, 24);
-    const pos = head.lastIndexOf("、");
-    sceneCut = `${pos > 8 ? head.slice(0, pos) : head}…`;
+  const meaningful = items.filter((it) => it.meanings?.length);
+  if (!meaningful.length) return "場面に合う単語は見つかりましたが、その意味を自然な日本語で説明できる資料が不足しています。下の辞書候補を確かめながら、印象に残った出来事をもう少し詳しく聞かせてください。";
+  const strongest = meaningful[0].score || 0;
+  const top = meaningful.filter((it) => !strongest || it.score >= strongest - 10 ||
+    (meaningful[0].row.term === "泳ぐ" && it.row.term === "水")).slice(0, 3);
+  const names = top.map((it) => `〈${it.row.term}〉`).join("、");
+  const parts = [`話してくれた夢では、${names}が主な手がかりになりそうです。`];
+  for (const it of top) {
+    const meaning = summarizeMeaning(it.meanings[0], 180);
+    if (meaning) parts.push(REVIEWED_SENSES[it.row.term]
+      ? meaning
+      : `〈${it.row.term}〉について、辞書には「${meaning}」という読み方があります。`);
   }
-  const names = top
-    .slice(0, 3)
-    .map((it) => `〈${it.row.term}〉`)
-    .join("");
-  const intro = sceneCut
-    ? `『${sceneCut}』——その夜の景色から、${names}が浮かび上がってきました。${INTRO_MOOD[mood]}`
-    : `……視えましたよ。あなたの夢を漂っていたのは、${names}。${INTRO_MOOD[mood]}`;
-
-  // 象徴の重なり(共起ルール)
-  const pairInsight = ctx ? findPairInsight(top, ctx) : "";
-
-  // テーマ別の読み: 辞書から抜き出した結果句を織り合わせ、助言を一文だけ添える
-  const themeLines = [];
-  const quoted = new Set();
-  const usedAdvice = new Set();
-  const themeSlots = analyzeThemes(top);
-  for (const slot of themeSlots.slice(0, 3)) {
-    const symsNote = slot.symbols
-      .slice()
-      .sort((a, b) => a.length - b.length)
-      .filter((t) => t.length <= 10)
-      .slice(0, 2)
-      .join("・");
-
-    const mainTone = slot.polarity >= 1 ? 1 : slot.polarity <= -1 ? -1 : 0;
-
-    // 引用元の選択: テーマの吉凶と同じ向きの象徴を優先し(引用と助言の食い違いを防ぐ)、
-    // 訳文由来の長いフレーズ(12文字超)は引用元にしない
-    const toneOf = (it) => (it.tone === undefined ? it.row.tone : it.tone);
-    const ranked = slot.items
-      .sort((a, b) => {
-        const ta = mainTone === 0 ? 0 : toneOf(a.it) === mainTone ? 1 : toneOf(a.it) === 0 ? 0 : -1;
-        const tb = mainTone === 0 ? 0 : toneOf(b.it) === mainTone ? 1 : toneOf(b.it) === 0 ? 0 : -1;
-        return tb - ta || b.hits - a.hits;
-      })
-      .map((s) => s.it);
-    const quotableTerm = (it) =>
-      it.row.term.length <= 12 && !/(ください|します|ました|ます|です)/.test(it.row.term);
-    const threads = [];
-    for (const it of ranked) {
-      if (threads.length >= 2) break;
-      if (quoted.has(it) || !quotableTerm(it)) continue;
-      const essence = extractEssence((it.meanings || [])[0]);
-      if (!essence) continue;
-      // 引用文そのものの吉凶が助言と逆向きなら、この象徴からは引用しない
-      if (mainTone !== 0) {
-        const essTone =
-          (POS_WORDS.some((w) => essence.includes(w)) ? 1 : 0) -
-          (NEG_WORDS.some((w) => essence.includes(w)) ? 1 : 0);
-        if (essTone === -mainTone) continue;
-      }
-      quoted.add(it);
-      threads.push({ it, essence });
-    }
-
-    const advice =
-      slot.polarity >= 1
-        ? slot.theme.pos
-        : slot.polarity <= -1
-          ? slot.theme.neg
-          : THEME_NEUTRAL;
-
-    let body;
-    if (threads.length === 2) {
-      body = `〈${threads[0].it.row.term}〉は「${threads[0].essence}」、〈${threads[1].it.row.term}〉は「${threads[1].essence}」——そう夢は告げています。`;
-    } else if (threads.length === 1) {
-      body = `〈${threads[0].it.row.term}〉は「${threads[0].essence}」と告げています。`;
-    } else {
-      // 結果句が抜けない場合は原文を短く引用(辞書から離れない)
-      const src = ranked.find((it) => !quoted.has(it) && quotableTerm(it));
-      const snippet = src ? summarizeMeaning((src.meanings || [])[0] || "", 80) : "";
-      if (snippet) {
-        quoted.add(src);
-        body = `〈${src.row.term}〉は「${snippet}」とされます。`;
-      } else {
-        body = "";
-      }
-    }
-
-    // 吉凶が割れているテーマは、反対側の声も並べて調停する
-    if (mainTone !== 0) {
-      const counter = ranked.find(
-        (it) => toneOf(it) === -mainTone && !quoted.has(it) && quotableTerm(it)
-      );
-      if (counter) {
-        const counterEssence = extractEssence((counter.meanings || [])[0]);
-        if (counterEssence) {
-          quoted.add(counter);
-          body += `一方で〈${counter.row.term}〉は「${counterEssence}」とも。`;
-        }
-      }
-    }
-
-    if (!body && (advice === THEME_NEUTRAL || usedAdvice.has(advice))) continue;
-    if (!body && !advice) continue;
-    usedAdvice.add(advice);
-    themeLines.push(`✦${slot.theme.label}${symsNote ? `(${symsNote})` : ""} ${body}${advice}`);
+  const themes = analyzeThemes(top).slice(0, 2);
+  const terms = new Set(top.map((it) => it.row.term));
+  const combination = [
+    [["橋", "友達"], "二つを重ねると、人との関係を通じて次の段階へ移る、という読み方もできます。夢の中で、その友人に会ってどう感じたかが手がかりになりそうです。"],
+    [["水", "泳ぐ"], "水と泳ぐ場面を重ねると、揺れる感情と付き合いながら前に進む姿として読めます。水の様子と、泳ぎやすさを一緒に振り返ってみてください。"],
+    [["追われている", "飛ぶ"], "追われる場面と飛ぶ場面を重ねると、負担から距離を置き、自由を取り戻したいという流れとして読めます。"],
+    [["落ちる", "飛ぶ"], "落ちる不安定さと、飛ぶ自由への願いが重なっています。怖さと解放感のどちらが強かったかを手がかりにできそうです。"],
+  ].find(([required]) => required.every((term) => terms.has(term)));
+  if (combination) parts.push(combination[1]);
+  else if (themes.length === 2 && top.length > 1) {
+    parts.push(`これらを合わせると、${themes.map((s) => s.theme.label).join("と")}という二つの面から振り返れます。別々の出来事なのか、ひとつの流れなのかも、夢の中の感覚と照らし合わせてみてください。`);
   }
-
-  // テーマが読み取れない夢でも、辞書の意味そのものは必ず伝える
-  if (themeLines.length === 0) {
-    for (const it of top.slice(0, 3)) {
-      const snippet = summarizeMeaning((it.meanings || [])[0] || "", 90);
-      if (!snippet) continue;
-      const tone = TONE_LABEL[it.tone] ? `【${TONE_LABEL[it.tone]}】` : "";
-      themeLines.push(`✦〈${it.row.term}〉${tone} ${snippet}`);
-    }
+  if (!combination && top.length > 1 && themes.length < 2) {
+    parts.push("それぞれの象徴を別々に見るだけでなく、夢の中でどう関わっていたかにも目を向けてみてください。いちばん印象に残った場面が、読み解く中心になります。");
   }
-
-  // 今夜のしるし(強く出た象徴のうち、短く覚えやすいもの)
-  const omenTerm = top
-    .slice(0, 3)
-    .map((it) => it.row.term)
-    .sort((a, b) => a.length - b.length)[0];
-  const omen = `今夜のしるしは〈${omenTerm}〉。眠る前にひとつだけ、それを思い浮かべてみてください。`;
-
-  // 総括のひとこと: 主なテーマと夜の気配をひとつの句に束ねる
-  const nouns = themeSlots.slice(0, 2).map((slot) => THEME_NOUN[slot.theme.key]);
-  const nightName = nouns.length
-    ? `${MOOD_EPITHET[mood]}、${nouns.join("と")}の夜`
-    : `〈${omenTerm}〉が寄り添う夜`;
-  const closing = `——ひとことで言うなら、今夜は「${nightName}」。どうか、良い夢の続きを。`;
-
-  const parts = [intro];
-  if (pairInsight) parts.push(`✧象徴の重なり — ${pairInsight}`);
-  if (themeLines.length) parts.push(themeLines.join("\n"));
-  parts.push(toneSummary(top));
-  parts.push(omen);
-  parts.push(closing);
+  const last = (ctx?.raw || diaryText).split(/[。！？!?\n]/u).filter((s) => s.trim()).at(-1) || "";
+  if (assertedPattern(last, /逃げ切|逃げき|助か|救われ|助けられ|抜け出|見つか/gu)) {
+    parts.push("結末では、困っていた状況から抜け出す展開もありました。途中の不安だけでなく、そこからどう変わったかまで含めて受け止められます。");
+  } else if (assertedPattern(last, /安心|ほっと|嬉し|うれし|楽しかった/gu)) {
+    parts.push("最後に残った安心や楽しさも大切です。象徴の意味だけでなく、そのときの気持ちも手がかりにしてみてください。");
+  }
+  parts.push("これは辞書に基づく一つの読み方で、未来の出来事を決めるものではありません。今の自分に重なる部分があるか、ゆっくり確かめてみてください。");
   return parts.join("\n\n");
 }
 
