@@ -162,7 +162,9 @@ async function loadData() {
     state.shardCount = data.shard_count;
     state.build = data.build || "";
     state.rows = data.entries.map((row) => {
-      const [term, tone, langs, orig, shard, idx] = row;
+      let [term, tone, langs, orig, shard, idx] = row;
+      // 本文がナッツを指す語を、動詞「食べた」に誤訳した既知の見出しを補正する。
+      if (term === "食べた" && orig === "yemiş") term = "ナッツ";
       const termNorm = normalize(term);
       const kws = classifyKeywords(termNorm);
       for (const run of extractRunsNorm(normalize(orig))) {
@@ -213,6 +215,8 @@ const EVENT_RULES = [
   ["泳ぐ", /泳い|泳ぐ|泳ぎ/gu],
   ["溺れる", /溺れ|おぼれ/gu],
   ["歯が抜ける", /歯.{0,8}(?:抜け|ぬけ|欠け|折れ)/gu],
+  ["食べる", /食べ|食事をし/gu],
+  ["変身", /変身|(?:犬|猫|鳥|魚|蛇|動物|別人)(?:の姿)?に(?:なっ|なる|変わ)/gu],
 ];
 
 function isAsserted(text, index, length) {
@@ -226,7 +230,7 @@ function isAsserted(text, index, length) {
 
 function narrativeScenes(text) {
   let reality = false;
-  return text.split(/[。！？!?\n、]/u).filter(Boolean).flatMap((raw) => {
+  return text.split(/[。！？!?\n]/u).filter(Boolean).flatMap((raw) => {
     if (/現実では|普段は|起きてから/u.test(raw)) reality = true;
     if (/夢では|夢の中/u.test(raw)) reality = false;
     if (reality) return [];
@@ -304,7 +308,7 @@ function findMatches(ctx) {
     const emphasis = scenes.some((scene) => /一番|いちばん|特に|印象|何度も|繰り返/u.test(scene.raw));
     const action = row.term === "橋" && scenes.some((scene) => assertedPattern(scene.raw, /渡っ|渡る/gu));
     const score = 5 + Math.min(row.term.length, 8) + (event ? 12 : 0) + (action ? 6 : 0) + (emphasis ? 12 : 0) + Math.min(scenes.length - 1, 3);
-    scored.push({ row, score, phraseHit: true, jaFull: true, scene: scenes[0].raw });
+    scored.push({ row, score, phraseHit: true, jaFull: true, scene: scenes[0].raw, sceneEvidence: scenes.map((s) => s.raw) });
   }
 
   scored.sort(
@@ -318,7 +322,7 @@ function findMatches(ctx) {
 
   const accepted = [];
   for (const item of scored) {
-    if (accepted.length >= 12) break;
+    if (accepted.length >= 24) break; // 本文の条件確認で除外する前に候補を確保する
     const dupe = accepted.some(
       (a) =>
         a.row.phraseFold.includes(item.row.phraseFold) ||
@@ -381,31 +385,42 @@ async function attachMeanings(items, ctx) {
   for (const it of items) {
     const shard = shards.get(it.row.shard);
     it.senses = shard ? shard[it.row.idx] : null;
-    const sense = pickSense(it.senses, ctx);
+    const selection = it.scene ? selectContextualSense(it.senses, it.sceneEvidence || [it.scene]) : null;
+    const sense = it.scene ? selection?.sense : pickSense(it.senses, ctx);
     it.meanings = sense ? sense.m : [];
     it.tone = sense ? sense.t : it.row.tone;
     it.orig = sense ? sense.o : it.row.orig;
     it.sources = sense ? sense.s : [];
     if (it.scene || REVIEWED_SENSES[it.row.term]) {
-      const reviewed = REVIEWED_SENSES[it.row.term];
+      const transformation = EVENT_RULES.find(([term]) => term === "変身")[1];
+      const transformed = (it.sceneEvidence || []).some((scene) => [...scene.matchAll(transformation)]
+        .some((m) => m[0].includes(it.row.term) && isAsserted(scene, m.index, m[0].length)));
+      const reviewed = transformed ? REVIEWED_SENSES["変身"] : REVIEWED_SENSES[it.row.term];
       if (reviewed) {
         it.meanings = [reviewed.text];
         it.orig = reviewed.orig;
         it.sources = [reviewed.source + "（原文確認・日本語要約）"];
         it.tone = 0;
+        if (transformed) it.meanings = [`〈${it.row.term}〉は、姿が変わった先として書かれています。この場面は〈変身〉の解釈にまとめています。`];
         if (it.row.term === "水") {
           if (assertedPattern(it.scene || "", /穏やか|静か/gu)) it.meanings = ["穏やかな水は、気持ちの落ち着きや安心感の象徴として読めます。"];
           else if (assertedPattern(it.scene || "", /荒れ|荒波|大波/gu)) it.meanings = ["荒れた水は、感情が大きく揺れたり、抱えきれなくなったりする感覚の象徴として読めます。"];
         }
       } else {
-        it.meanings = selectPassages(it.meanings, it.scene);
+        it.meanings = selection ? [selection.text] : [];
         it.tone = 0; // 語全体の吉凶を、選んだ一場面へ無条件に引き継がない
       }
     }
   }
+  // 見出しが一致しても、本文の前提が合わない候補は結果にも根拠一覧にも出さない。
+  for (let i = items.length - 1; i >= 0; i--) {
+    if (items[i].scene && !items[i].meanings.length) items.splice(i, 1);
+  }
 }
 
 const REVIEWED_SENSES = {
+  "変身": {orig:"Transformation", source:"Dream_Dictionary Kaggle Dataset", quote:"What was transforming in your dream? Was the process good or bad?", text:"姿が変わる場面は、新しい始まりや変化をどう受け止めているかを振り返る手がかりになります。何に変わったかだけでなく、その姿でどう感じたかも大切です。"},
+  "食べる": {orig:"eating", source:"Dream_Dictionary Kaggle Dataset", quote:"The type of food will be metaphoric to what you are fulfilling inside you.", text:"食べる場面には、自分を満たすものや取り入れる力の象徴という読み方があります。何を食べ、どんな感覚がしたかを手がかりにできます。"},
   "友達": {orig:"Friend", source:"Dream_Dictionary Kaggle Dataset", quote:"You may see qualities in them you want to incorporate within yourself.", text:"友人は、その人の中に見ている性格や、自分も大切にしたい一面を振り返る手がかりになります。"},
   "泳ぐ": {orig:"swimming", source:"Dream_Dictionary Kaggle Dataset", quote:"Swimming brings your focus on managing your emotional stability in your life.", text:"泳ぐ場面は、自分の感情とどう付き合い、進んでいくかを考える手がかりになります。楽に泳げたか、苦しかったかによって読み方も変わります。"},
   "追われている": {orig:"Being Chased", source:"HeartYearning Dream Symbols Dataset", quote:"Avoidance of a person, responsibility, or emotion.", text:"追われる場面は、人との関係や責任、向き合いにくい感情から距離を置きたい気持ちの象徴として読めます。"},
@@ -422,13 +437,97 @@ function assertedPattern(text, pattern) {
   return [...String(text).matchAll(pattern)].some((m) => isAsserted(text, m.index, m[0].length));
 }
 
-function selectPassages(meanings, scene) {
-  const words = extractRunsNorm(normalize(scene)).filter((w) => w.length >= 2 && !STOP_KW.has(w));
-  const candidates = meanings.flatMap((m) => String(m).split(/(?<=[。！？])/u)).map((s) => s.trim())
-    .filter((s) => s.length >= 8 && s.length <= 180 && /[。！？]$/u.test(s))
-    .filter((s) => !/現在の課題|善と善|参照|によると|ナブルシ|(.{3,12})、\1、\1/u.test(s));
-  return [...new Set(candidates)].map((text) => ({text, score: words.reduce((n,w) => n + (text.includes(w) ? w.length : 0), 0)}))
-    .sort((a,b) => b.score - a.score).slice(0, 1).map((v) => v.text);
+const PREMISE_ACTIONS = [
+  /食べ|食事/gu, /飲[むんみま]|飲酒/gu, /聞[くいきか]|聴[くいきか]/gu,
+  /買[うっいわ]|購入/gu, /売[るっりら]|販売/gu, /殺[すしさ]|殺害/gu,
+  /噛[むんみま]|咬/gu, /攻撃|襲[うっいわ]/gu, /泳[ぐいぎが]/gu,
+  /飛[ぶんびば]/gu, /落ち|落下|転落/gu, /失[うっいわ]|なくし|紛失/gu,
+  /壊[すれしさ]|破損/gu, /腐[るっりら]/gu, /泣[くいきか]/gu,
+];
+const PREMISE_FILLER = new Set(["夢", "中", "自分", "自身", "姿", "人", "あなた", "私", "誰", "何", "場合", "時", "こと", "もの", "それ", "これ", "夢想", "者"]);
+const PREMISE_ALIASES = [["パン", "トースト"], ["食事", "食べ"], ...KANA_SYNONYMS.map(([kana, kanji]) => [kana, kanji])];
+
+function caseRoles(text) {
+  const roles = new Map();
+  if (!WORD_SEGMENTER) return roles;
+  const tokens = [...WORD_SEGMENTER.segment(text)];
+  for (let i = 1; i < tokens.length; i++) {
+    const particle = tokens[i].segment;
+    const noun = tokens[i - 1].segment;
+    if (!["を", "が", "に"].includes(particle) || !/[一-鿿ァ-ヶ]/u.test(noun) || PREMISE_FILLER.has(noun)) continue;
+    const key = phraseKey(noun);
+    if (!roles.has(key)) roles.set(key, new Set());
+    roles.get(key).add(particle);
+  }
+  return roles;
+}
+
+function premiseSupported(sentence, scene) {
+  // ponytail: bounded linguistic rules; unknown conditions are withheld, not guessed.
+  const end = /ということは|ことは|夢は|姿は|のは|場合|とき|時は|たら|なら|を見ると|見れば|は[、，]?/u.exec(sentence);
+  if (!end) return false;
+  const premise = sentence.slice(0, end.index).replace(/^夢の中で|^夢で|^夢に/u, "");
+  if (!premise || /それ|これ|その|彼|彼女/u.test(premise)) return false;
+  const sceneFold = phraseKey(scene);
+  for (const qualifier of premise.match(/たくさん|大勢|多く|きれい|とても|必ず|[0-9０-９]+/gu) || []) {
+    if (!sceneFold.includes(phraseKey(qualifier))) return false;
+  }
+  let nouns = premise;
+  let hasAction = false;
+  for (const action of PREMISE_ACTIONS) {
+    const required = [...premise.matchAll(action)];
+    if (required.length) {
+      hasAction = true;
+      const positive = required.some((m) => isAsserted(premise, m.index, m[0].length));
+      const actual = [...scene.matchAll(action)];
+      if (!actual.some((m) => isAsserted(scene, m.index, m[0].length) === positive)) return false;
+      nouns = nouns.replace(action, " ");
+    }
+  }
+  if (hasAction) {
+    const actualRoles = caseRoles(scene);
+    for (const [noun, roles] of caseRoles(premise)) {
+      const actual = actualRoles.get(noun);
+      if (actual && ![...roles].some((role) => actual.has(role))) return false;
+    }
+  }
+  // 「見る」は対象の存在だけを指す一般条件。その他の動作は上で明示的に照合する。
+  nouns = nouns.replace(/見[るたてえい]|する|した|して|いる|いた|いう|なった/gu, " ");
+  const tokens = WORD_SEGMENTER ? [...WORD_SEGMENTER.segment(nouns)].filter((s) => s.isWordLike).map((s) => s.segment) : extractRunsNorm(normalize(nouns));
+  const facts = tokens.filter((word) => /[一-鿿ァ-ヶ]/u.test(word) && !PREMISE_FILLER.has(word));
+  if (!facts.length) return false;
+  return facts.every((fact) => {
+    const aliases = PREMISE_ALIASES.find((group) => group.includes(fact)) || [fact];
+    return aliases.some((word) => {
+      const needle = phraseKey(word);
+      let at = sceneFold.indexOf(needle);
+      while (at >= 0) {
+        if (isAsserted(sceneFold, at, needle.length)) return true;
+        at = sceneFold.indexOf(needle, at + 1);
+      }
+      return false;
+    });
+  });
+}
+
+function selectContextualSense(senses, scenes) {
+  let best = null;
+  for (const sense of senses || []) {
+    for (const meaning of sense.m || []) {
+      for (const sentence of String(meaning).split(/(?<=[。！？])/u)) {
+        const text = sentence.trim();
+        if (text.length < 8 || text.length > 180 || !/[。！？]$/u.test(text)) continue;
+        if (/現在の課題|善と善|参照|によると|ナブルシ|(.{3,12})、\1、\1/u.test(text)) continue;
+        for (const scene of scenes) {
+          if (!premiseSupported(text, scene)) continue;
+          const words = extractRunsNorm(normalize(scene)).filter((w) => w.length >= 2 && !STOP_KW.has(w));
+          const score = words.reduce((n,w) => n + (text.includes(w) ? w.length : 0), 0);
+          if (!best || score > best.score) best = {sense, text, score};
+        }
+      }
+    }
+  }
+  return best;
 }
 
 /* ---------- 占い文の組み立て ---------- */
@@ -685,6 +784,7 @@ function composeReading(items, diaryText, ctx) {
   const themes = analyzeThemes(top).slice(0, 2);
   const terms = new Set(top.map((it) => it.row.term));
   const combination = [
+    [["変身", "食べる"], "姿の変化と食べる行動を重ねると、新しい自分のあり方と、自分を満たすものという二つの面から振り返れます。姿が変わる前後で、気分や感覚も変わったかを思い返してみてください。"],
     [["橋", "友達"], "二つを重ねると、人との関係を通じて次の段階へ移る、という読み方もできます。夢の中で、その友人に会ってどう感じたかが手がかりになりそうです。"],
     [["水", "泳ぐ"], "水と泳ぐ場面を重ねると、揺れる感情と付き合いながら前に進む姿として読めます。水の様子と、泳ぎやすさを一緒に振り返ってみてください。"],
     [["追われている", "飛ぶ"], "追われる場面と飛ぶ場面を重ねると、負担から距離を置き、自由を取り戻したいという流れとして読めます。"],
@@ -696,6 +796,9 @@ function composeReading(items, diaryText, ctx) {
   }
   if (!combination && top.length > 1 && themes.length < 2) {
     parts.push("それぞれの象徴を別々に見るだけでなく、夢の中でどう関わっていたかにも目を向けてみてください。いちばん印象に残った場面が、読み解く中心になります。");
+  }
+  if (terms.has("食べる") && /味(?:が|は)?(?:しなかった|しない|なかった|ない)/u.test(ctx?.raw || diaryText)) {
+    parts.push("味がしなかった、という感覚も手がかりです。食べるという行動と、満たされた感じがあったかどうかを分けて振り返ってみてください。");
   }
   const last = (ctx?.raw || diaryText).split(/[。！？!?\n]/u).filter((s) => s.trim()).at(-1) || "";
   if (assertedPattern(last, /逃げ切|逃げき|助か|救われ|助けられ|抜け出|見つか/gu)) {
