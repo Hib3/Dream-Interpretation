@@ -10,7 +10,7 @@ const context = vm.createContext({
   fetch: async (url) => ({ok: true, json: async () => JSON.parse(fs.readFileSync(path.join(root, url.split('?')[0]), 'utf8'))}),
 });
 const code = fs.readFileSync(path.join(root, 'app.js'), 'utf8').split('/* ---------- 占い師の語り')[0];
-vm.runInContext(code + '\nrenderDictSuggest=()=>{}; globalThis.api={state,loadData,buildContext,findMatches,attachMeanings,composeReading,selectContextualSense,REVIEWED_SENSES};', context);
+vm.runInContext(code + '\nrenderDictSuggest=()=>{}; globalThis.api={state,loadData,buildContext,findMatches,attachMeanings,composeReading,buildReadingPlan,groundedItems,selectContextualSense,REVIEWED_SENSES};', context);
 const api = context.api;
 
 (async () => {
@@ -87,6 +87,44 @@ const api = context.api;
   const negativeItems = api.findMatches(negativeChange);
   await api.attachMeanings(negativeItems, negativeChange);
   assert(!negativeItems.some((i) => i.row.term === '変身' || i.meanings.some((m) => m.includes('姿が変わった先'))));
+  const interpret = async (text) => {
+    const ctx = api.buildContext(text), items = api.findMatches(ctx);
+    await api.attachMeanings(items, ctx);
+    return {ctx, items, plan: api.buildReadingPlan(items, ctx), reading: api.composeReading(items, text, ctx)};
+  };
+  const emphasis = await interpret('犬は背景にちらっと見えた。一番印象に残ったのは橋を渡ったことだった。');
+  assert.equal(emphasis.plan[0].terms[0], '橋');
+  assert(!emphasis.plan[0].terms.includes('犬'));
+  const mild = await interpret('泳いだ。少し怖かった。');
+  const strong = await interpret('泳いだ。とても怖かった。');
+  assert(strong.items.find((i) => i.row.term === '泳ぐ').score > mild.items.find((i) => i.row.term === '泳ぐ').score);
+  assert(strong.reading.includes('とても怖かった'));
+  const unafraid = await interpret('泳いだ。怖くなかった。');
+  assert.equal(unafraid.ctx.scenes[0].feelings.length, 0);
+  assert(unafraid.reading.includes('怖くなかった'));
+  const separate = await interpret('橋を渡った。次の場面で友達に会った。');
+  assert(!separate.plan.some((block) => block.kind === 'connection'));
+  const together = await interpret('橋を渡って友達に会った。');
+  assert(together.plan.some((block) => block.kind === 'connection'));
+  const contrast = api.buildContext('猫を見たが、犬が魚を食べた。');
+  assert.equal(api.selectContextualSense([sense('猫が魚を食べることは、幸運を意味します。')], contrast.scenes.map((s) => s.raw)), null);
+  const detachedTaste = await interpret('パンを食べた。次の場面では味がしなかった。');
+  assert(!detachedTaste.reading.includes('味がしなかった、という感覚'));
+  const reality = await interpret('犬に追われた。現実では助かった。');
+  assert(!reality.reading.includes('抜け出す展開'));
+  const irrelevantEnding = await interpret('橋を渡った。最後に財布が見つかった。');
+  assert(!irrelevantEnding.reading.includes('抜け出す展開'));
+  const damaged = {...reportItems.find((i) => i.row.term === '食べる'), meanings:['ナッツを食べると幸運です。']};
+  assert.equal(api.groundedItems([damaged], reportCtx).length, 0);
+  assert(!api.composeReading([damaged], report, reportCtx).includes('ナッツ'));
+  const mixed = {...damaged, meanings:[...damaged.meanings, damaged.grounding.text]};
+  assert(!api.composeReading([mixed], report, reportCtx).includes('ナッツ'));
+  assert.equal(api.groundedItems(reportItems, api.buildContext('橋を渡った。')).length, 0);
+  assert.equal(new Set(together.plan.map((b) => b.text)).size, together.plan.length);
+  for (const result of [emphasis, mild, strong, unafraid, separate, together, detachedTaste, reality]) {
+    for (const block of result.plan) assert(block.scenes.every((raw) => result.ctx.scenes.some((s) => s.raw === raw)));
+  }
+  console.log('Nuance, intensity, scene separation, provenance, tampering and output-plan checks passed.');
   const original = JSON.parse(zlib.gunzipSync(fs.readFileSync(path.join(root,'data/dream_terms.json.gz'))));
   for (const sense of Object.values(api.REVIEWED_SENSES)) {
     assert(original.entries.some((e) => e.term === sense.orig && e.meanings.some((m) => m.source_name === sense.source && m.text.includes(sense.quote))), `Missing source for ${sense.orig}`);
