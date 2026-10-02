@@ -62,7 +62,9 @@ const api = context.api;
   const reportReading = api.composeReading(reportItems, report, reportCtx);
   const selectionMs = Math.round(performance.now() - started);
   assert.equal(api.state.rows.find((r) => r.orig === 'yemiş').term, 'ナッツ');
-  assert(reportReading.includes('変身') && reportReading.includes('味がしなかった'));
+  assert(reportItems.some((i) => i.row.term === '変身') && reportReading.includes('充足感のずれ'));
+  assert(reportReading.startsWith('この夢の中心は、'));
+  assert(!/未来の予測|振り返ってみて|どんな感覚があったでしょう/.test(reportReading));
   assert(!/ナッツ|鳴き声|黄金色|婚約|食べた〉/.test(reportReading + reportItems.flatMap((i) => i.meanings).join('')));
   const sense = (text) => ({o:'test', t:0, m:[text], s:['test']});
   const gates = [
@@ -92,6 +94,56 @@ const api = context.api;
     await api.attachMeanings(items, ctx);
     return {ctx, items, plan: api.buildReadingPlan(items, ctx), reading: api.composeReading(items, text, ctx)};
   };
+  const eventMatrix = [
+    ['海で泳ぐ予定だった。', '泳ぐ', false],
+    ['海で泳いだ。', '泳ぐ', true],
+    ['空を飛ぶつもりだった。', '飛ぶ', false],
+    ['空を飛んだ。', '飛ぶ', true],
+    ['もし空を飛ぶなら楽しいと思った。', '飛ぶ', false],
+    ['落ちるかもしれないと心配した。', '落ちる', false],
+    ['崖から落ちた。', '落ちる', true],
+    ['落ちそうになったが落ちなかった。', '落ちる', false],
+    ['歯が抜けるのを想像した。', '歯が抜ける', false],
+    ['歯が抜けた。', '歯が抜ける', true],
+    ['泳ぎたかった。', '泳ぐ', false],
+    ['パンを食べたいと思った。', '食べる', false],
+    ['パンを食べた。', '食べる', true],
+    ['「飛ぶ」という文字を見た。', '飛ぶ', false],
+    ['鳥が空を飛んでいた。', '飛ぶ', false],
+    ['鳥が空を飛んでいて、私も空を飛んだ。', '飛ぶ', true],
+    ['空を飛んだわけではない。', '飛ぶ', false],
+    ['橋を渡った。現実では泳いだ。', '泳ぐ', false],
+  ];
+  for (const [text, term, expected] of eventMatrix) {
+    assert.equal(api.buildContext(text).scenes.some((s) => s.events.has(term)), expected, text);
+  }
+  const relationMatrix = [
+    ['猫がいて、犬が魚を食べた', false],
+    ['猫が魚を見て、犬が肉を食べた', false],
+    ['猫が、魚を食べた', true],
+    ['猫が、魚をとてもおいしく食べた', true],
+    ['猫が魚を食べた', true],
+    ['魚が猫を食べた', false],
+    ['猫が魚を食べる予定だった', false],
+  ];
+  for (const [scene, expected] of relationMatrix) {
+    assert.equal(Boolean(api.selectContextualSense([sense('猫が魚を食べることは、幸運を意味します。')], [scene])), expected, scene);
+  }
+  for (const [required, actual] of [['赤い車', '青い車'], ['高い橋', '低い橋'], ['腐ったパン', 'パン']]) {
+    assert.equal(api.selectContextualSense([sense(`${required}を見ることは、変化を意味します。`)], [`${actual}を見た`]), null);
+  }
+  const satisfying = await interpret('鳥になってパンを食べた。とてもおいしかった。');
+  assert(!satisfying.reading.includes('充足感のずれ'));
+  const imaginary = await interpret('海で泳ぐ予定だった。');
+  assert.equal(imaginary.plan.length, 0);
+  assert.equal(imaginary.items.length, 0);
+  assert.equal(api.selectContextualSense([sense('海を見ることは、両親の心が壊れ、仕事が成功し、不運が起き、利益が増え、争いに勝つことを意味します。')], ['海を見た']), null);
+  assert.equal(api.selectContextualSense([sense('家を見ることは、悪意と悪意のある人に勝つことを意味します。')], ['家を見た']), null);
+  assert(api.selectContextualSense([sense('海を見ることは、豊かな感情を意味します。')], ['海を見た']));
+  const sea = await interpret('海を見た。');
+  assert(sea.reading.includes('自分の内側の状態'));
+  assert(!/両親|不運|新しい仕事|悪意/.test(sea.reading));
+  console.log(`${eventMatrix.length + relationMatrix.length + 3} cross-category assertion, role and qualifier checks passed.`);
   const emphasis = await interpret('犬は背景にちらっと見えた。一番印象に残ったのは橋を渡ったことだった。');
   assert.equal(emphasis.plan[0].terms[0], '橋');
   assert(!emphasis.plan[0].terms.includes('犬'));
@@ -109,7 +161,7 @@ const api = context.api;
   const contrast = api.buildContext('猫を見たが、犬が魚を食べた。');
   assert.equal(api.selectContextualSense([sense('猫が魚を食べることは、幸運を意味します。')], contrast.scenes.map((s) => s.raw)), null);
   const detachedTaste = await interpret('パンを食べた。次の場面では味がしなかった。');
-  assert(!detachedTaste.reading.includes('味がしなかった、という感覚'));
+  assert(!/満足や手応えが伴わない|充足感のずれ/.test(detachedTaste.reading));
   const reality = await interpret('犬に追われた。現実では助かった。');
   assert(!reality.reading.includes('抜け出す展開'));
   const irrelevantEnding = await interpret('橋を渡った。最後に財布が見つかった。');
