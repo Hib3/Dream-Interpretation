@@ -5,7 +5,7 @@
  * - その他はネットワーク優先+キャッシュフォールバック
  */
 
-const CACHE_NAME = "dream-diary-v2";
+const CACHE_NAME = "dream-diary-v3";
 const SHELL = [
   ".",
   "index.html",
@@ -16,6 +16,7 @@ const SHELL = [
   "icons/icon-192.png",
   "icons/icon-512.png",
   "data/ja/terms.min.json",
+  "data/ja/reading-semantics.json",
 ];
 
 self.addEventListener("install", (event) => {
