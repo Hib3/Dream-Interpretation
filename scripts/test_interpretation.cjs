@@ -52,9 +52,10 @@ const api = context.api;
   await api.attachMeanings(items, ctx);
   assert(!api.composeReading(items, denied, ctx).includes('抜け出す展開'));
   assert(outputs[1].reading.includes('抜け出す展開'));
+  assert(!outputs[1].reading.includes('守ってくれる存在'));
   assert(outputs[6].reading.includes('穏やかな水'));
-  assert(outputs[0].reading.includes('人との関係を通じて'));
-  assert(outputs.at(-1).reading.includes('感情と付き合いながら'));
+  assert(outputs[0].reading.includes('次へ移ること') && outputs[0].reading.includes('取り入れたい性質'));
+  assert(outputs.at(-1).reading.includes('感情を揺さぶられる課題') && outputs.at(-1).reading.includes('心の状態や感情'));
   const report = '朝起きたら、犬になっていて、バタートーストを食べた。味はしなかった。次のシーンでは猫になって魚を食べていた。';
   const reportCtx = api.buildContext(report), reportItems = api.findMatches(reportCtx);
   const started = performance.now();
@@ -62,8 +63,8 @@ const api = context.api;
   const reportReading = api.composeReading(reportItems, report, reportCtx);
   const selectionMs = Math.round(performance.now() - started);
   assert.equal(api.state.rows.find((r) => r.orig === 'yemiş').term, 'ナッツ');
-  assert(reportItems.some((i) => i.row.term === '変身') && reportReading.includes('充足感のずれ'));
-  assert(reportReading.startsWith('この夢の中心は、'));
+  assert(reportItems.some((i) => i.row.term === '変身') && reportReading.includes('心の充足') && reportReading.includes('味がしなかった'));
+  assert(reportReading.startsWith('この夢では、'));
   assert(!/未来の予測|振り返ってみて|どんな感覚があったでしょう/.test(reportReading));
   assert(!/ナッツ|鳴き声|黄金色|婚約|食べた〉/.test(reportReading + reportItems.flatMap((i) => i.meanings).join('')));
   const sense = (text) => ({o:'test', t:0, m:[text], s:['test']});
@@ -94,6 +95,51 @@ const api = context.api;
     await api.attachMeanings(items, ctx);
     return {ctx, items, plan: api.buildReadingPlan(items, ctx), reading: api.composeReading(items, text, ctx)};
   };
+  const genericCtx = api.buildContext('鐘と鍵があった。');
+  const dictionaryFixture = (term, text, score) => ({row:api.state.rows.find((r) => r.term === term), score,
+    meanings:[text], senses:[{m:[text]}], grounding:{kind:'dictionary', text, scenes:[genericCtx.scenes[0].raw]}});
+  const genericItems = [dictionaryFixture('鐘', '鐘は、新しい知らせを暗示します。', 20), dictionaryFixture('鍵', '鍵は、問題の解決を暗示します。', 19)];
+  const genericPlan = api.buildReadingPlan(genericItems, genericCtx);
+  assert.equal(genericPlan[0].kind, 'connection');
+  assert(genericPlan[0].text.includes('新しい知らせ') && genericPlan[0].text.includes('問題の解決'));
+  for (const claim of genericPlan[0].claims) assert(genericItems.find((i) => i.row.term === claim.term).grounding.text.includes(claim.text));
+  genericItems[0] = dictionaryFixture('鐘', '鐘は、長く待った再会を暗示します。', 20);
+  const updatedReading = api.composeReading(genericItems, '鐘と鍵があった。', genericCtx);
+  assert(updatedReading.includes('長く待った再会') && !updatedReading.includes('新しい知らせ'));
+  const fullNarrative = '水の中を泳いでいたら、橋の向こうに白い犬がいて、最後は空を飛ぶように逃げた。';
+  const narrative = await interpret(fullNarrative);
+  for (const term of ['水', '泳ぐ', '橋', '白い犬', '逃げる']) {
+    assert(narrative.items.some((i) => i.row.term === term), `Missing dictionary match: ${term}`);
+    assert(narrative.plan.some((b) => b.terms.includes(term)), `Omitted from reading: ${term}`);
+  }
+  assert(!narrative.items.some((i) => i.row.term === '飛ぶ'));
+  for (const meaning of ['悪意', '身を守る', '次へ移る', '不安や問題を避け', '今の状況から離れたい']) assert(narrative.reading.includes(meaning), `Missing implication: ${meaning}`);
+  assert(!/手がかり|振り返|逃げ切|追ってきた|犬から逃げ/.test(narrative.reading));
+  const noEscape = await interpret(fullNarrative.replace('逃げた', '逃げなかった'));
+  assert(!noEscape.items.some((i) => i.row.term === '逃げる'));
+  assert(!noEscape.plan.some((b) => b.kind === 'connection' && b.terms.includes('逃げる')));
+  const differentColor = await interpret(fullNarrative.replace('白い犬', '黒い犬'));
+  assert(!differentColor.items.some((i) => i.row.term === '白い犬'));
+  assert(!differentColor.reading.includes('自分の善良さや高潔さ'));
+  const reversedSimile = await interpret('最後は逃げるように空を飛んだ。');
+  assert(reversedSimile.items.some((i) => i.row.term === '飛ぶ'));
+  assert(!reversedSimile.items.some((i) => i.row.term === '逃げる'));
+  const differentEpisode = await interpret('水の中を泳いだ。次の場面では、最後に逃げた。');
+  assert(!differentEpisode.plan.some((b) => b.kind === 'connection' && b.terms.includes('泳ぐ') && b.terms.includes('逃げる')));
+  const reverseOrder = await interpret('最後は逃げて泳いだ。');
+  assert(reverseOrder.reading.indexOf('〈逃げる〉') < reverseOrder.reading.indexOf('〈泳ぐ〉'));
+  const swimmingEmphasis = await interpret('特に水の中を泳いだことが印象に残った。最後は逃げた。');
+  assert(swimmingEmphasis.plan[0].terms.includes('逃げる'));
+  const dogEmphasis = await interpret('水の中を泳いだ。白い犬が一番印象に残った。最後は逃げた。');
+  assert.equal(dogEmphasis.plan[0].terms[0], '白い犬');
+  for (const text of ['逃げ道を探した。', '逃げ場がなかった。', '逃走計画を立てた。', '逃げる予定だった。']) {
+    assert(!api.buildContext(text).scenes.some((s) => s.events.has('逃げる')), text);
+  }
+  for (const text of ['逃げ出した。', '逃走した。', '逃亡していた。', '逃げ切った。']) {
+    assert(api.buildContext(text).scenes.some((s) => s.events.has('逃げる')), text);
+  }
+  console.log('Narrative coverage, source implications, negated escape, color, simile and episode tests passed.');
+  if (process.argv.includes('--examples')) console.log(JSON.stringify({text:fullNarrative, reading:narrative.reading, terms:narrative.items.map((i) => i.row.term)}));
   const eventMatrix = [
     ['海で泳ぐ予定だった。', '泳ぐ', false],
     ['海で泳いだ。', '泳ぐ', true],

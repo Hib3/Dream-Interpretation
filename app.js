@@ -216,6 +216,7 @@ const EVENT_RULES = [
   ["溺れる", /溺れ|おぼれ/gu],
   ["歯が抜ける", /歯.{0,8}(?:抜け|ぬけ|欠け|折れ)/gu],
   ["食べる", /食べ|食事をし/gu],
+  ["逃げる", /逃げ(?=[たてるなずられ切き出去]|$)|逃れ(?=[たてるなずられ]|$)|(?:逃走|逃亡)(?:を)?(?:し|する|中)/gu],
   ["変身", /変身|(?:犬|猫|鳥|魚|蛇|動物|別人)(?:の姿)?に(?:なっ|なる|変わ)/gu],
 ];
 
@@ -245,6 +246,7 @@ function splitNarrativeClauses(text) {
 
 function narrativeScenes(text) {
   let reality = false;
+  let episode = 0;
   const units = [];
   for (const raw of splitNarrativeClauses(text)) {
     // 主語を省いた短い感情文だけを直前へ結び付ける。場面転換や別の人物には持ち越さない。
@@ -253,6 +255,7 @@ function narrativeScenes(text) {
     } else units.push(raw);
   }
   return units.flatMap((raw, id) => {
+    if (/次の(?:場面|シーン)|場面が変|別の場面/u.test(raw)) episode += 1;
     if (/現実では|普段は|起きてから/u.test(raw)) reality = true;
     if (/夢では|夢の中/u.test(raw)) reality = false;
     if (reality) return [];
@@ -264,15 +267,17 @@ function narrativeScenes(text) {
       bounds.add(s.index); bounds.add(s.index + s.segment.length);
     }
     const events = new Set();
+    const eventOffsets = new Map();
     for (const [term, pattern, exclude] of EVENT_RULES) {
       if (exclude?.test(raw)) continue;
-      if ([...raw.matchAll(pattern)].some((m) => isAsserted(raw, m.index, m[0].length))) events.add(term);
+      const offsets = [...raw.matchAll(pattern)].filter((m) => isAsserted(raw, m.index, m[0].length)).map((m) => m.index);
+      if (offsets.length) { events.add(term); eventOffsets.set(term, offsets); }
     }
     const feelings = [...raw.matchAll(/怖[いくか]|恐ろし|不安|悲し|寂し|安心|ほっと|嬉し|うれし|楽し|楽しか|苦し/gu)]
       .filter((m) => isAsserted(raw, m.index, m[0].length))
       .map((m) => ({ word: m[0], intensity: /とても|すごく|非常に|ひどく|強く/u.test(raw.slice(Math.max(0, m.index - 8), m.index)) ? 2
         : /少し|ちょっと|やや/u.test(raw.slice(Math.max(0, m.index - 8), m.index)) ? 0.5 : 1 }));
-    return [{ id, raw, folded, bounds, events, feelings, roles: caseRoles(raw) }];
+    return [{ id, episode, raw, folded, bounds, events, eventOffsets, feelings, roles: caseRoles(raw) }];
   });
 }
 
@@ -431,18 +436,23 @@ async function attachMeanings(items, ctx) {
       const transformation = EVENT_RULES.find(([term]) => term === "変身")[1];
       const transformed = (it.sceneEvidence || []).some((scene) => [...scene.matchAll(transformation)]
         .some((m) => m[0].includes(it.row.term) && isAsserted(scene, m.index, m[0].length)));
-      const reviewed = transformed ? REVIEWED_SENSES["変身"] : REVIEWED_SENSES[it.row.term];
+      const pursuer = it.row.term === "犬" && (it.sceneEvidence || []).some((scene) =>
+        [...scene.matchAll(/追いかけられ|追われ|追い回され/gu)].some((m) =>
+          /(?:犬|いぬ|イヌ)(?:に|から)$/u.test(scene.slice(0, m.index)) && isAsserted(scene, m.index, m[0].length)));
+      const redirect = transformed ? "変身" : pursuer ? "追われている" : null;
+      const reviewed = REVIEWED_SENSES[redirect || it.row.term];
       if (reviewed) {
         it.meanings = [reviewed.text];
         it.orig = reviewed.orig;
         it.sources = [reviewed.source + "（原文確認・日本語要約）"];
         it.tone = 0;
         if (transformed) it.meanings = [`〈${it.row.term}〉は、姿が変わった先として書かれています。この場面は〈変身〉の解釈にまとめています。`];
+        if (pursuer) it.meanings = ["犬に追われる行動が明記されているため、この場面は〈追われている〉の解釈にまとめています。"];
         if (it.row.term === "水") {
           if (assertedPattern(it.scene || "", /穏やか|静か/gu)) it.meanings = ["穏やかな水は、気持ちの落ち着きや安心感の象徴として読めます。"];
           else if (assertedPattern(it.scene || "", /荒れ|荒波|大波/gu)) it.meanings = ["荒れた水は、感情が大きく揺れたり、抱えきれなくなったりする感覚の象徴として読めます。"];
         }
-        it.grounding = { kind: transformed ? "redirect" : "reviewed", text: it.meanings[0], scenes: [...(it.sceneEvidence || [])] };
+        it.grounding = { kind: redirect ? "redirect" : "reviewed", text: it.meanings[0], scenes: [...(it.sceneEvidence || [])] };
       } else {
         it.meanings = selection ? [selection.text] : [];
         it.tone = 0; // 語全体の吉凶を、選んだ一場面へ無条件に引き継がない
@@ -457,16 +467,18 @@ async function attachMeanings(items, ctx) {
 }
 
 const REVIEWED_SENSES = {
+  "逃げる": {orig:"Escape", source:"Dream_Dictionary Kaggle Dataset", quote:"Escaping emerges in our dreams when the dreamer is not aware of their fears and what they essentially avoid in life.", text:"逃げる夢は、直面したくない不安や問題を避け、今の状況から離れたい気持ちを暗示します。"},
+  "白い犬": {orig:"a white dog", source:"DreamBook Guanaco Format Hugging Face Dataset", quote:"ill-wishers around you will try to harm you, but your innate goodness and nobility will protect you.", text:"白い犬は、周囲からの悪意や妨害に対し、自分の善良さや高潔さが身を守ることを暗示します。"},
   "海": {orig:"Sea", source:"Dream_Dictionary Kaggle Dataset", quote:"What is taking place in or around the sea are symbols that relate to your inner feelings.", text:"海が出てくる夢は、まだはっきり意識できていない感情や、自分の内側の状態を映していると読めます。"},
   "変身": {orig:"Transformation", source:"Dream_Dictionary Kaggle Dataset", quote:"What was transforming in your dream? Was the process good or bad?", text:"姿が変わる場面は、新しい始まりや、変化への向き合い方を象徴すると読めます。何に変わったかだけでなく、その姿でどう感じたかも大切です。"},
   "食べる": {orig:"eating", source:"Dream_Dictionary Kaggle Dataset", quote:"The type of food will be metaphoric to what you are fulfilling inside you.", text:"食べる場面には、心の充足や、活力を取り入れることの象徴という読み方があります。何を食べ、どんな感覚がしたかを手がかりにできます。"},
-  "友達": {orig:"Friend", source:"Dream_Dictionary Kaggle Dataset", quote:"You may see qualities in them you want to incorporate within yourself.", text:"友人は、その人の中に見ている性格や、自分も大切にしたい一面を振り返る手がかりになります。"},
-  "泳ぐ": {orig:"swimming", source:"Dream_Dictionary Kaggle Dataset", quote:"Swimming brings your focus on managing your emotional stability in your life.", text:"泳ぐ場面は、自分の感情とどう付き合い、進んでいくかを考える手がかりになります。楽に泳げたか、苦しかったかによって読み方も変わります。"},
+  "友達": {orig:"Friend", source:"Dream_Dictionary Kaggle Dataset", quote:"You may see qualities in them you want to incorporate within yourself.", text:"友人は、その人に感じている魅力や、自分にも取り入れたい性質を象徴します。"},
+  "泳ぐ": {orig:"swimming", source:"Dream_Dictionary Kaggle Dataset", quote:"Swimming informs the dreamer they will be challenged emotionally soon.", text:"泳ぐ夢は、感情を揺さぶられる課題に向き合い、気持ちを保ちながら状況を動かそうとすることを暗示します。"},
   "追われている": {orig:"Being Chased", source:"HeartYearning Dream Symbols Dataset", quote:"Avoidance of a person, responsibility, or emotion.", text:"追われる場面は、人との関係や責任、向き合いにくい感情から距離を置きたい気持ちの象徴として読めます。"},
   "落ちる": {orig:"Falling", source:"HeartYearning Dream Symbols Dataset", quote:"Insecurity, loss of support, or feeling out of control.", text:"落下する場面には、支えを失う不安や、自分では状況を動かせない感覚を重ねる読み方があります。"},
   "飛ぶ": {orig:"Flying", source:"HeartYearning Dream Symbols Dataset", quote:"Desire for freedom, escape, or a higher perspective on life.", text:"空を飛ぶ場面は、自由になりたい願いや、今いる場所から離れて物事を見直したい気持ちにつながります。"},
   "歯が抜ける": {orig:"Teeth", source:"Dream_Dictionary Kaggle Dataset", quote:"Sometimes it can represent some sort of personal loss or feelings of inadequacy.", text:"歯が抜ける場面には、大切なものを失う不安や、自信の揺らぎを重ねる読み方があります。"},
-  "水": {orig:"Water", source:"HeartYearning Dream Symbols Dataset", quote:"Emotional state. Calm water means peace; turbulent water means overwhelmed.", text:"水の様子は、感情を読む手がかりです。穏やかな水は落ち着き、荒れた水は感情を抱えきれない感覚の象徴として読まれます。"},
+  "水": {orig:"Water", source:"HeartYearning Dream Symbols Dataset", quote:"Emotional state. Calm water means peace; turbulent water means overwhelmed.", text:"水は、心の状態や感情を表す象徴です。穏やかな水は気持ちの落ち着き、荒れた水は感情を抱えきれない状態を意味します。"},
   "橋": {orig:"Bridge", source:"Dream_Dictionary Kaggle Dataset", quote:"You might be transitioning from one place to another", text:"橋は、人や場所をつなぐことや、今までの段階から次へ移ることの象徴として読めます。"},
   "犬": {orig:"Dogs", source:"Dream_Dictionary Kaggle Dataset", quote:"companionship, loyalty, protectors, guardians", text:"犬には、親しさや信頼、守ってくれる存在の象徴という読み方があります。ただし、犬との関係や行動によって受け止め方は変わります。"},
   "溺れる": {orig:"Drowning", source:"Dream_Dictionary Kaggle Dataset", quote:"feelings of being emotionally overwhelmed, burdened or consumed", text:"溺れる場面は、感情や負担を抱えきれない感覚の象徴として読めます。誰が溺れていたか、助かったかどうかも大切です。"},
@@ -829,12 +841,21 @@ function groundedItems(items, ctx) {
   });
 }
 
+function readingCore(item) {
+  const first = item.grounding.text.split(/(?<=。)/u)[0];
+  const body = /^[^、。]{1,40}は、(.+)。$/u.exec(first)?.[1];
+  if (!body) return "";
+  // 文型を確認できる場合だけ、採用済みの意味文から結果句を抜き出す。曖昧なら全文を残す。
+  const core = /^(.*?)(?:を暗示します|を象徴します|を象徴すると読めます|の象徴として読めます|を表す象徴です|の象徴という読み方があります|につながります)$/u.exec(body)?.[1];
+  return core && core.length <= 90 ? core : "";
+}
+
 function buildReadingPlan(items, ctx) {
   const meaningful = groundedItems(items, ctx).sort((a, b) => b.score - a.score);
   if (!meaningful.length) return [];
-  const strongest = meaningful[0].score || 0;
-  const top = meaningful.filter((it) => !strongest || it.score >= strongest - 10 ||
-    (meaningful[0].row.term === "泳ぐ" && it.row.term === "水")).slice(0, 3);
+  // 動作への加点を、物・色・場所を落とす足切りに使わない。背景として明示された弱い候補だけ外す。
+  const foreground = meaningful.filter((it) => it.score > 0);
+  const top = (foreground.length ? foreground : meaningful).slice(0, 8);
   const blocks = [];
   const add = (kind, text, refs, scenes) => blocks.push({ kind, text, terms: refs.map((it) => it.row.term), scenes });
   for (const it of top) {
@@ -845,17 +866,29 @@ function buildReadingPlan(items, ctx) {
       : `〈${it.row.term}〉の場面に合う辞書の解釈は、「${meaning}」というものです。`, [it], it.grounding.scenes);
   }
   const terms = new Set(top.map((it) => it.row.term));
-  const combination = [
-    [["変身", "食べる"], "この夢は、新しい自分のあり方と、自分を満たすものを探している夢と読めます。姿の変化と、何かを自分の中に取り入れる行動が重なっているためです。"],
-    [["橋", "友達"], "この夢は、人との関係を通じて次の段階へ移ることを表している、と読めます。友人に感じている魅力や大切にしたい性質が、その変化に関わるという解釈です。"],
-    [["水", "泳ぐ"], "この夢は、自分の感情と付き合いながら前に進む姿を映している、と読めます。水の状態が感情を、その中を泳ぐ行動が感情への向き合い方を表すという解釈です。"],
-    [["追われている", "飛ぶ"], "この夢は、負担から距離を置いて自由を取り戻したい気持ちを表している、と読めます。追われる圧迫感と、飛ぶことによる解放が結び付いています。"],
-    [["落ちる", "飛ぶ"], "この夢は、支えを失う不安と、束縛を離れたい願いが重なった夢と読めます。落ちることと飛ぶことは、同じ宙に浮く体験でも、不安定さと自由という異なる意味を持ちます。"],
-  ].find(([required]) => required.every((term) => terms.has(term)) &&
-    ctx.scenes.some((s) => required.every((term) => top.find((it) => it.row.term === term).grounding.scenes.includes(s.raw))));
-  if (combination) {
-    const refs = top.filter((it) => combination[0].includes(it.row.term));
-    add("connection", combination[1], refs, ctx.scenes.filter((s) => refs.every((it) => it.grounding.scenes.includes(s.raw))).map((s) => s.raw));
+  const isEvent = (item) => EVENT_RULES.some(([term]) => term === item.row.term);
+  const secondary = (isEvent(top[0]) && top.slice(1).find(isEvent)) || top[1];
+  const focus = [top[0], secondary].filter(Boolean).map((item) => ({ item, core: readingCore(item),
+    scene: ctx.scenes.find((s) => item.grounding.scenes.includes(s.raw)) }));
+  if (focus.length === 2 && focus.every((f) => f.core && f.scene)) {
+    const position = (f) => f.scene.eventOffsets.get(f.item.row.term)?.[0] ?? f.scene.folded.indexOf(f.item.row.phraseFold);
+    const chronological = [...focus].sort((a, b) => a.scene.id - b.scene.id || position(a) - position(b));
+    const [earlier, later] = chronological;
+    const sameScene = focus[0].scene.id === focus[1].scene.id;
+    const sequence = earlier.scene.episode === later.scene.episode &&
+      (earlier.scene.id < later.scene.id || (position(earlier) >= 0 && position(later) >= 0 && position(earlier) < position(later))) &&
+      /最後|その後|それから|やがて/u.test(later.scene.raw);
+    if (sameScene || sequence) {
+      const refs = focus.map((f) => f.item);
+      const text = sequence
+        ? `〈${earlier.item.row.term}〉の場面は「${earlier.core}」を暗示します。続く〈${later.item.row.term}〉には、「${later.core}」という意味があります。`
+        : `この夢では、〈${focus[0].item.row.term}〉が「${focus[0].core}」を、〈${focus[1].item.row.term}〉が「${focus[1].core}」を暗示しています。`;
+      for (let i = blocks.length - 1; i >= 0; i--) {
+        if (blocks[i].terms.every((term) => refs.some((it) => it.row.term === term))) blocks.splice(i, 1);
+      }
+      add("connection", text, refs, [...new Set(focus.map((f) => f.scene.raw))]);
+      blocks.at(-1).claims = focus.map((f) => ({ term: f.item.row.term, text: f.core }));
+    }
   }
   const feelingScene = ctx.scenes.filter((s) => top.some((it) => it.grounding.scenes.includes(s.raw)) &&
     (s.feelings.length || /怖くなかった|不安ではなかった/u.test(s.raw)))
@@ -868,12 +901,6 @@ function buildReadingPlan(items, ctx) {
     !/次の|別の|場面が変/u.test(s.raw) && (s.events.has("食べる") || ctx.scenes[index - 1]?.events.has("食べる")));
   if (terms.has("食べる") && tasteScene) {
     add("observation", "食べる行動はあるのに、味がしなかった。この対比を充足の象徴と重ねると、何かを取り入れても満足や手応えが伴わない感覚を表している、と解釈できます。", top.filter((it) => it.row.term === "食べる"), [tasteScene.raw]);
-    const changeAndEating = blocks.find((b) => b.kind === "connection" && b.terms.includes("変身") && b.terms.includes("食べる"));
-    if (changeAndEating && changeAndEating.scenes.some((raw) => raw === tasteScene.raw || ctx.scenes[ctx.scenes.indexOf(tasteScene) - 1]?.raw === raw)) {
-      changeAndEating.text = "この夢の中心は、変化と充足感のずれです。姿が変わっても、食べ物の味はしない。外側の変化に内側の満足感が追いついていない、という解釈になります。";
-      changeAndEating.scenes.push(tasteScene.raw);
-      blocks.pop(); // 味の解釈は結論へ統合したため、同じ説明を繰り返さない。
-    }
   }
   const last = ctx.scenes.at(-1)?.raw || "";
   if (assertedPattern(last, /逃げ切|逃げき|助か|救われ|助けられ|抜け出/gu)) {
@@ -898,6 +925,8 @@ function composeReading(items, diaryText, ctx) {
   const blocks = buildReadingPlan(items, ctx).filter((block) => {
     if (!block.text || !/[。！？]$/u.test(block.text) || /undefined|NaN/u.test(block.text) || seen.has(block.text)) return false;
     if (!block.terms.every((term) => validTerms.has(term)) || !block.scenes.every((raw) => ctx.scenes.some((s) => s.raw === raw))) return false;
+    if (block.claims && !block.claims.every((claim) => items.some((it) =>
+      it.row.term === claim.term && it.grounding?.text.includes(claim.text)))) return false;
     seen.add(block.text);
     return true;
   });
