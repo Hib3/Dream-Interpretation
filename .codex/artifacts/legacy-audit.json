@@ -1,0 +1,372 @@
+{
+  "source_entries": 79114,
+  "generated_ja_entries": 58577,
+  "source_meanings": 86073,
+  "by_language": {
+    "my": {
+      "source_entries": 456,
+      "source_meanings": 456,
+      "empty_entries": 0,
+      "meanings_excluded_by_first_two_limit": 0,
+      "overly_long_source_terms": 168,
+      "empty_source_meanings": 0,
+      "term_equals_meaning": 456,
+      "source_long_meanings_gt280": 0,
+      "source_numeric_meanings": 1,
+      "source_religious_terms": 0,
+      "source_cross_reference": 0,
+      "source_repetition_signal": 0,
+      "missing_source_metadata": 0,
+      "entries_with_unlinked_aggregate_sources": 456,
+      "generated_ja_entries": 396,
+      "unrepresented_source_entries_by_legacy_original_key": 54
+    },
+    "en": {
+      "source_entries": 10437,
+      "source_meanings": 14968,
+      "empty_entries": 0,
+      "meanings_excluded_by_first_two_limit": 2031,
+      "overly_long_source_terms": 7,
+      "empty_source_meanings": 0,
+      "term_equals_meaning": 0,
+      "source_long_meanings_gt280": 4474,
+      "source_numeric_meanings": 349,
+      "source_religious_terms": 85,
+      "source_cross_reference": 4482,
+      "source_repetition_signal": 1,
+      "missing_source_metadata": 0,
+      "source_meanings_shortened_by_legacy_preprocessing": 3711,
+      "source_characters_removed_by_legacy_preprocessing": 1178839,
+      "entries_with_unlinked_aggregate_sources": 0,
+      "generated_ja_entries": 8889,
+      "explicit_truncation_marker": 51,
+      "suspicious_japanese_signal": 14,
+      "turkish_leakage": 31,
+      "latin_sentence_signal": 20,
+      "unrepresented_source_entries_by_legacy_original_key": 366
+    },
+    "tr": {
+      "source_entries": 67225,
+      "source_meanings": 69653,
+      "empty_entries": 0,
+      "meanings_excluded_by_first_two_limit": 286,
+      "overly_long_source_terms": 17,
+      "empty_source_meanings": 0,
+      "term_equals_meaning": 0,
+      "source_long_meanings_gt280": 65551,
+      "source_numeric_meanings": 439,
+      "source_religious_terms": 4975,
+      "source_cross_reference": 2558,
+      "source_repetition_signal": 1,
+      "missing_source_metadata": 0,
+      "source_meanings_shortened_by_legacy_preprocessing": 8791,
+      "source_characters_removed_by_legacy_preprocessing": 9941272,
+      "entries_with_unlinked_aggregate_sources": 0,
+      "generated_ja_entries": 51372,
+      "explicit_truncation_marker": 1953,
+      "latin_sentence_signal": 168,
+      "turkish_leakage": 92,
+      "suspicious_japanese_signal": 64,
+      "url_html_leakage": 1,
+      "unrepresented_source_entries_by_legacy_original_key": 2218
+    },
+    "zh-Hant": {
+      "source_entries": 996,
+      "source_meanings": 996,
+      "empty_entries": 0,
+      "meanings_excluded_by_first_two_limit": 0,
+      "overly_long_source_terms": 0,
+      "empty_source_meanings": 0,
+      "term_equals_meaning": 996,
+      "source_long_meanings_gt280": 0,
+      "source_numeric_meanings": 0,
+      "source_religious_terms": 8,
+      "source_cross_reference": 0,
+      "source_repetition_signal": 0,
+      "missing_source_metadata": 0,
+      "entries_with_unlinked_aggregate_sources": 0,
+      "generated_ja_entries": 874,
+      "latin_sentence_signal": 1,
+      "unrepresented_source_entries_by_legacy_original_key": 121
+    }
+  },
+  "source_meanings_per_entry": {
+    "1": 74472,
+    "2": 3302,
+    "3": 788,
+    "4": 285,
+    "5": 150,
+    "6": 85,
+    "7": 25,
+    "8": 6,
+    "10": 1
+  },
+  "counts": {
+    "empty_runtime_entries": 0,
+    "same_ja_term_multiple_senses": 11548,
+    "terms_at_four_sense_cap": 1971,
+    "terms_at_60_char_cap": 0,
+    "overly_long_ja_terms_gt30": 58,
+    "sentence_like_ja_terms": 2650,
+    "runtime_senses": 76355,
+    "senses_in_four_sense_slots": 7884,
+    "original_at_48_char_cap": 282,
+    "empty_runtime_senses": 0,
+    "runtime_meanings": 80709,
+    "explicit_truncation_marker": 1955,
+    "latin_sentence_signal": 175,
+    "turkish_leakage": 100,
+    "suspicious_japanese_signal": 71,
+    "url_html_leakage": 1,
+    "distinct_ja_meanings": 80548,
+    "duplicate_ja_meaning_occurrences": 161,
+    "exact_duplicate_source_records": 0,
+    "same_source_key_multiple_ja_terms": 0,
+    "source_prefix48_collisions": 0
+  },
+  "source_coverage": {
+    "Myanmar Dream Dictionary GitHub Dataset": {
+      "source_meanings": 456,
+      "runtime_senses_with_source_name": 402
+    },
+    "Dictionary of Dreams Kaggle Dataset": {
+      "source_meanings": 898,
+      "runtime_senses_with_source_name": 628
+    },
+    "DreamBook Guanaco Format Hugging Face Dataset": {
+      "source_meanings": 6956,
+      "runtime_senses_with_source_name": 6154
+    },
+    "HeartYearning Dream Symbols Dataset": {
+      "source_meanings": 985,
+      "runtime_senses_with_source_name": 949
+    },
+    "Rüya Tabirleri Hugging Face Dataset": {
+      "source_meanings": 8795,
+      "runtime_senses_with_source_name": 8204
+    },
+    "Dream Interpretation Turkish Hugging Face Dataset": {
+      "source_meanings": 2889,
+      "runtime_senses_with_source_name": 2725
+    },
+    "Rüya Tabiri GitHub Pages Dataset": {
+      "source_meanings": 57993,
+      "runtime_senses_with_source_name": 56009
+    },
+    "Ten Thousand Dreams Interpreted; Or, What's in a Dream": {
+      "source_meanings": 2014,
+      "runtime_senses_with_source_name": 1943
+    },
+    "Fortunes and Dreams": {
+      "source_meanings": 522,
+      "runtime_senses_with_source_name": 216
+    },
+    "Dream_Dictionary Kaggle Dataset": {
+      "source_meanings": 2079,
+      "runtime_senses_with_source_name": 1649
+    },
+    "The Golden Wheel Dream-book and Fortune-teller": {
+      "source_meanings": 876,
+      "runtime_senses_with_source_name": 298
+    },
+    "The Witches' Dream Book; and Fortune Teller": {
+      "source_meanings": 581,
+      "runtime_senses_with_source_name": 262
+    },
+    "Dream Decoder Synthetic Dataset": {
+      "source_meanings": 20,
+      "runtime_senses_with_source_name": 19
+    },
+    "SomniumSage Dream Dataset": {
+      "source_meanings": 13,
+      "runtime_senses_with_source_name": 13
+    },
+    "Wikisource 周公解夢": {
+      "source_meanings": 996,
+      "runtime_senses_with_source_name": 875
+    }
+  },
+  "examples": {
+    "preprocessing_loss": [
+      {
+        "language": "en",
+        "term": "-Turn",
+        "source_length": 18475,
+        "sent_length": 238
+      },
+      {
+        "language": "en",
+        "term": "a bacchanalian",
+        "source_length": 369,
+        "sent_length": 204
+      },
+      {
+        "language": "en",
+        "term": "a bed",
+        "source_length": 524,
+        "sent_length": 181
+      },
+      {
+        "language": "en",
+        "term": "a bee",
+        "source_length": 472,
+        "sent_length": 209
+      },
+      {
+        "language": "en",
+        "term": "a bicycle",
+        "source_length": 349,
+        "sent_length": 183
+      },
+      {
+        "language": "en",
+        "term": "a big snake",
+        "source_length": 290,
+        "sent_length": 163
+      }
+    ],
+    "explicit_truncation_marker": [
+      {
+        "term": "atmからお金が引き出せない",
+        "text": "夢の中で、ATMからお金を引き出せないということは、あなたがより強くなり、外からの敵に対して鎧を着ているようなものになり、それが家族の長老や親しいサークルに共有され、彼らに発表され、快適になることを意味します、あなたが独身の場合、あなたは結婚について考え始めます、あなたが信頼している人々があなたを失望させる可能性があり、夢を見た人にとって悪夢のような不運な時期があり、さらにあなたが被る物質的および精神的な大きなダメージに加えて、あなたの…"
+      },
+      {
+        "term": "boiling water in a kettle",
+        "text": "Boiling water in a teapot in a dream means that the person will be very tired both mentally and physically due to the rush, he will not be able to provide for his family and feed them, his troubles and problems will soon…"
+      },
+      {
+        "term": "call someone by name",
+        "text": "夢の中で誰かを名前で呼ぶということは、家族生活についての非常に良いニュースを受け取ること、今いる状況から抜け出せない場合、経済的、精神的に大きなダメージを受け、悪い人々と取引しなければならないこと、問題やトラブルが短期間で解消されること、顧客が増加するため収入が増加すること、悪い迷惑な出来事のために大きな夢が打ち砕かれること、共通点を見つけることができないこと、一部の人にとっては非常に困難で頭痛を引き起こす状況を経験することを意味します…"
+      }
+    ],
+    "latin_sentence_signal": [
+      {
+        "term": "boiling water in a kettle",
+        "text": "Boiling water in a teapot in a dream means that the person will be very tired both mentally and physically due to the rush, he will not be able to provide for his family and feed them, his troubles and problems will soon…"
+      },
+      {
+        "term": "carry someone's luggage",
+        "text": "Carrying someone's suitcase in a dream means that you will enter a much better path with a few very big and successful moves, it will cause you to experience great sadness, you will get the things you have dreamed of for…"
+      },
+      {
+        "term": "drinking water from the teapot",
+        "text": "Drinking water from a teapot in a dream means that you will meet auspicious luck, that you will come to the point of explosion, that the right steps will be taken in the work to be done, that troubles and problems will b…"
+      }
+    ],
+    "turkish_leakage": [
+      {
+        "term": "lose(嘔吐)",
+        "text": "夢の中で自分が簡単に嘔吐しているのを見るのは、悪からの悔い改めを意味します。そしてその人は主のもとに帰ります。またはその権利を所有者に譲渡します。 Cafer-i Sâdık (r.a."
+      },
+      {
+        "term": "お互いに石を投げ合う",
+        "text": "クールルル デュゼニニン オラカジナ ヴェ トゥム ベクレンティルリニン ビール ビール ゲルチェクレシェチェイン、ソジュレセイン、ハヤトゥヌ タトゥル ビールあなたの人生は、あなたが何をしているのか、あなたが何をしているのかを知り、あなたがアラカジナ、あなたが何をしているのかを知ることができますか？ alınacağına、sorunlu olaylar ile karşılaşacağına、keyfinin ve huzurunu…"
+      },
+      {
+        "term": "お互いをしっかりと抱き締め合う",
+        "text": "ビルビリン sımsıkı sarılmak şöhret ve itibar kazanacağına、morarini bozan durumlardan tez vakitte kurtulacağına、iş hayatındaki bu güzel gelişmelerin aile hayatına da yansıyacağına、あなたのハヤトゥンダキは、あなたのハヤトゥナのヤンシュマスの言うことを言います、あなたはもっ…"
+      }
+    ],
+    "suspicious_japanese_signal": [
+      {
+        "term": "おじいさんは病気です",
+        "text": "夢の中で祖父が病気になるのを見ることは、あなたがあらゆる種類の不運や不幸に遭遇し、緊張した時間を過ごすことを意味し、問題はできるだけ早く消え、集中すればするほど恥ずかしがり屋になり、あなたが受けた祈りのおかげでビジネスが開かれ、何らかの理由で休んで自分自身を集める必要があり、そうでなければ仕事に十分な集中力とエネルギーを取り戻すことができず、遠い親戚の悲しい知らせを受け取ることになります。"
+      },
+      {
+        "term": "お互いに水を投げ合う",
+        "text": "あなたの安全は、あなたがより多くのことを知っているから、カルシュラシャカジナ、セブディ、キシル、アン、そしてアンのすべてのことを理解することができます私は彼女の意見を聞いて、彼女の意見を聞いて、彼女の意見を聞いて、彼女の意見を聞いて、彼女の意見を聞いてください。"
+      },
+      {
+        "term": "お母さんがタバコを吸っているのを見ている",
+        "text": "夢の中で母親がタバコを吸うのを見るのは、あなたが途切れることのない収入を得る、成功が増えて長く続く、役職やキャリアのために常に働くのではなく、日々トラブルが増えて世帯分離が起こる、幸運な結婚をして良い子供に恵まれる、たとえ損をするかもしれない仕事を始めたとしても、チャンスのおかげでこの状況を利益に変え、素晴らしい経験を経て自分自身を集める努力をすることを意味します。悲しみ。"
+      }
+    ],
+    "url_html_leakage": [
+      {
+        "term": "プライバシーポリシーとはどういう意味ですか?",
+        "text": "当社のウェブサイトアドレス: http://www.ドリームコムで。 tr.訪問者がサイトにコメントを残すと、コメント フォームに表示されるデータに加え、スパム検出に役立つ訪問者の IP アドレスとブラウザのスラッグも収集されます。"
+      }
+    ]
+  },
+  "immutable_inventory": {
+    "data/dream_terms.json.gz": {
+      "bytes": 15405056,
+      "sha256": "fb6b7461cb5c0acd5add5c2bb670e104da5aa2a2f175ca1f8b637de4c8c2c39f"
+    },
+    "data/source_registry.json": {
+      "bytes": 8977,
+      "sha256": "c06d6f6af1995267743bddeada67f7a6cf74e58d76663e59c1425cb18485faf6"
+    },
+    "data/raw/github_akmm_dev_dream_dictionary.json": {
+      "bytes": 120929,
+      "sha256": "815ffc8ef7dcbe7f2b5747594a79d4b89f951dce92d282a1b59e60680cea29db"
+    },
+    "data/raw/github_ljt_one_dream_symbols_dataset.json": {
+      "bytes": 396272,
+      "sha256": "fd69fd7a03e8b1957d303d2eb06cff95fced4d60933682a116f51e0d92512022"
+    },
+    "data/raw/github_makalin_somniumsage_dream_dataset.csv": {
+      "bytes": 25593,
+      "sha256": "b3aecb4667305f6947e84c2a6cc0c1832ff7bac4dd1a7d432b7a986b9282d0cc"
+    },
+    "data/raw/github_sannlynnhtun_blazor_dream_dictionary_detail.json": {
+      "bytes": 112708,
+      "sha256": "7e1e74776fd5b318a90172ca595fd0b8fb6f1ccc32746fc38bc94ae227dd2d42"
+    },
+    "data/raw/gutenberg_53879_witches_dream_book.txt": {
+      "bytes": 370932,
+      "sha256": "890d4d1feaa65b21d2ad62ae0c04e4b80c147821640d2f0606f48ffa7a619f20"
+    },
+    "data/raw/gutenberg_54774_fortunes_and_dreams.txt": {
+      "bytes": 263812,
+      "sha256": "a0bbc538b3c7b290a211a523d2c2149b67ca0fb7b733f4fbd664bcaa453b7276"
+    },
+    "data/raw/gutenberg_60045_golden_wheel_dream_book.txt": {
+      "bytes": 600621,
+      "sha256": "0fa9981c8c0d9ca6fe84078bff773ee8f4705c83630ceb054ab901a2d0d95931"
+    },
+    "data/raw/gutenberg_926_ten_thousand_dreams_interpreted.txt": {
+      "bytes": 943841,
+      "sha256": "dc3984c226dabd2012cb517f3952da18d17e419b4848206b09012978eccac6f7"
+    },
+    "data/raw/hf_n3rd0_dreambook_guanaco_rows.json": {
+      "bytes": 2711358,
+      "sha256": "ddb1a92731fdc7a1cc3f1f1dc16134908671c544ac1d9ab3c5c1ef83875d8a03"
+    },
+    "data/raw/hf_n3rd0_dreambook_guanaco_rows.meta.json": {
+      "bytes": 21,
+      "sha256": "05f7ddc55f8e234ddc1579bd7338c58030ebcf029e423cbfb604ce8f9266a9f6"
+    },
+    "data/raw/hf_samvlad_dream_decoder_dataset_rows.json": {
+      "bytes": 964085,
+      "sha256": "58511c676b39d294f3cc99b59063f47a282a5ec1dc87473e53efbda26e0646fe"
+    },
+    "data/raw/hf_teragron_dream_interpretation_rows.json": {
+      "bytes": 1769512,
+      "sha256": "65a46e42244eb1285df91f05e6f59193d0c220a6a5147e94748acc2cfa741f65"
+    },
+    "data/raw/hf_tolgadev_ruyatabirleri_ruya.csv": {
+      "bytes": 12740700,
+      "sha256": "536cc52366e5ab37c1a0b09475c0625f760a377c483082fb5ed48acb9ff4dcf7"
+    },
+    "data/raw/kaggle_manswad_dictionary_of_dreams.zip": {
+      "bytes": 110379,
+      "sha256": "1bfda1771081db39f8855d6b97de4cf25489b994aabad4e9746d27d1e9c35943"
+    },
+    "data/raw/kaggle_yuvrajsanghai_dream_dictionary.zip": {
+      "bytes": 448528,
+      "sha256": "16174a3ec9f8738b9b1e108a5354ca3265ef312fe4b227706c1015f584040787"
+    },
+    "data/raw/wikisource_zhougong_jiemeng_raw.txt": {
+      "bytes": 24285,
+      "sha256": "cf04d799682997becc0ca1a7f7cc3a30d141755b7eb2a9de4adcb04958a16300"
+    }
+  },
+  "limitations": [
+    "Legacy cache not found in repository; translated pre-truncation texts unavailable.",
+    "Coverage by original key is an estimate: original labels were truncated to 48 characters and source associations were aggregated.",
+    "Duplicate Japanese meanings across independent sources are not necessarily errors.",
+    "Language leakage and suspicious Japanese counts are heuristic signals, not semantic accuracy rates.",
+    "Raw cache for the additional Turkish GitHub Pages source is absent; merged source remains available."
+  ]
+}

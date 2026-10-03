@@ -1,3 +1,7 @@
 data/raw/
 __pycache__/
 *.pyc
+.codex/dictionary-work/
+.codex/sample-work/
+.codex/staging-*/
+.codex/transport-work/

@@ -20,6 +20,9 @@ python scripts/build_dream_terms.py
 
 ## 日本語辞書の生成
 
+再構築中の新パイプラインは [DICTIONARY_REBUILD.md](DICTIONARY_REBUILD.md)、監査結果は [DICTIONARY_AUDIT.md](DICTIONARY_AUDIT.md) を参照してください。Phase 1では現行配信データを置換しません。
+以下は旧パイプラインの再現手順です。文字数・意味数の上限があるため、新辞書の全量生成には使用しません。
+
 ブラウザアプリは、原語辞書を日本語へ翻訳・統合した `data/ja/` を参照します。
 
 ```bash

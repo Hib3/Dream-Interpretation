@@ -163,6 +163,7 @@ async function loadData() {
     const semantics = await fetchJson("data/ja/reading-semantics.json", "no-cache");
     if (semantics.version !== 1 || !Array.isArray(semantics.profiles)) throw new Error("Invalid reading semantics");
     state.readingProfiles = semantics.profiles;
+    state.masterSchema = data.master_schema || null;
     state.shardCount = data.shard_count;
     state.build = data.build || "";
     state.rows = data.entries.map((row) => {
@@ -444,7 +445,7 @@ async function attachMeanings(items, ctx) {
         [...scene.matchAll(/追いかけられ|追われ|追い回され/gu)].some((m) =>
           /(?:犬|いぬ|イヌ)(?:に|から)$/u.test(scene.slice(0, m.index)) && isAsserted(scene, m.index, m[0].length)));
       const redirect = transformed ? "変身" : pursuer ? "追われている" : null;
-      const reviewed = REVIEWED_SENSES[redirect || it.row.term];
+      const reviewed = state.masterSchema ? null : REVIEWED_SENSES[redirect || it.row.term];
       if (reviewed) {
         it.meanings = [reviewed.text];
         it.orig = reviewed.orig;
@@ -530,6 +531,8 @@ function premiseSupported(sentence, scene) {
     if (!sceneFold.includes(phraseKey(qualifier))) return false;
   }
   let nouns = premise;
+  // 「季節が夏」と「夏だった」は同じ条件。季節名そのものの照合は残す。
+  if (/(?:季節が[春夏秋冬]|[春夏秋冬]の季節)/u.test(nouns)) nouns = nouns.replace(/季節/gu, " ");
   let hasAction = false;
   for (const action of PREMISE_ACTIONS) {
     const required = [...premise.matchAll(action)];
