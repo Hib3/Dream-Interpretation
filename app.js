@@ -160,7 +160,13 @@ async function loadData() {
   try {
     // 語彙インデックスはURLに版が乗らないため、HTTPの再検証(ETag)で更新を拾う
     const data = await fetchJson("data/ja/terms.min.json", "no-cache");
-    const semantics = await fetchJson("data/ja/reading-semantics.json", "no-cache");
+    let semantics;
+    try {
+      semantics = await fetchJson("data/ja/reading-semantics-runtime.json", "no-cache");
+    } catch (error) {
+      if (!String(error.message).startsWith("HTTP 404")) throw error;
+      semantics = await fetchJson("data/ja/reading-semantics.json", "no-cache");
+    }
     if (semantics.version !== 1 || !Array.isArray(semantics.profiles)) throw new Error("Invalid reading semantics");
     state.readingProfiles = semantics.profiles;
     state.masterSchema = data.master_schema || null;
@@ -168,8 +174,6 @@ async function loadData() {
     state.build = data.build || "";
     state.rows = data.entries.map((row) => {
       let [term, tone, langs, orig, shard, idx] = row;
-      // 本文がナッツを指す語を、動詞「食べた」に誤訳した既知の見出しを補正する。
-      if (term === "食べた" && orig === "yemiş") term = "ナッツ";
       const termNorm = normalize(term);
       const kws = classifyKeywords(termNorm);
       for (const run of extractRunsNorm(normalize(orig))) {
@@ -235,6 +239,11 @@ function isAsserted(text, index, length) {
   if (/^[をはが]?(?:見えて|見て|見え|見|出て)(?:い|こ)?(?:ない|なかった|ず)/u.test(after)) return false;
   if (/^(?:る|た|だ)?(?:ように|みたいに|わけではない|かどうか)/u.test(after)) return false;
   return !/(?:not|never|no)\s+$/iu.test(text.slice(0, index));
+}
+
+function isDogPursuerScene(scene) {
+  return [...scene.matchAll(/追いかけられ|追われ|追い回され/gu)].some((match) =>
+    /(?:犬|いぬ|イヌ)(?:に|から)$/u.test(scene.slice(0, match.index)) && isAsserted(scene, match.index, match[0].length));
 }
 
 function splitNarrativeClauses(text) {
@@ -415,6 +424,17 @@ function pickSense(senses, ctx) {
   return best;
 }
 
+function profileMatchesScenes(profile, scenes) {
+  const triggers = profile.when;
+  if (!Array.isArray(triggers) || !triggers.length) return false;
+  return triggers.some((trigger) => scenes.some((scene) => {
+    for (let index = scene.indexOf(trigger); index >= 0; index = scene.indexOf(trigger, index + 1)) {
+      if (isAsserted(scene, index, trigger.length)) return true;
+    }
+    return false;
+  }));
+}
+
 async function attachMeanings(items, ctx) {
   const shardIds = [...new Set(items.map((it) => it.row.shard))];
   const shards = new Map();
@@ -429,18 +449,43 @@ async function attachMeanings(items, ctx) {
   );
   for (const it of items) {
     delete it.grounding;
+    delete it.readingProfileIds;
     const shard = shards.get(it.row.shard);
     it.senses = shard ? shard[it.row.idx] : null;
-    const selection = it.scene ? selectContextualSense(it.senses, it.sceneEvidence || [it.scene]) : null;
-    const sense = it.scene ? selection?.sense : pickSense(it.senses, ctx);
+    const curatedIds = new Set(state.readingProfiles
+      .filter((profile) => profile.term === it.row.term && profile.source?.sense_id &&
+        it.senses?.some((sense) => sense.id === profile.source.sense_id))
+      .map((profile) => profile.source.sense_id));
+    const candidates = curatedIds.size === 1
+      ? it.senses.filter((sense) => curatedIds.has(sense.id))
+      : it.senses;
+    const selection = it.scene ? selectContextualSense(candidates, it.sceneEvidence || [it.scene]) : null;
+    const sense = it.scene ? (curatedIds.size === 1 ? candidates[0] : selection?.sense) : pickSense(it.senses, ctx);
+    it.selectedSenseId = sense?.id || null;
     it.meanings = sense ? sense.m : [];
     it.tone = sense ? sense.t : it.row.tone;
     it.orig = sense ? sense.o : it.row.orig;
     it.sources = sense ? sense.s : [];
-    if (it.scene || REVIEWED_SENSES[it.row.term]) {
-      const transformation = EVENT_RULES.find(([term]) => term === "変身")[1];
-      const transformed = (it.sceneEvidence || []).some((scene) => [...scene.matchAll(transformation)]
-        .some((m) => m[0].includes(it.row.term) && isAsserted(scene, m.index, m[0].length)));
+    const transformation = EVENT_RULES.find(([term]) => term === "変身")[1];
+    const transformed = (it.sceneEvidence || []).some((scene) => [...scene.matchAll(transformation)]
+      .some((m) => m[0].includes(it.row.term) && isAsserted(scene, m.index, m[0].length)));
+    const senseProfiles = curatedIds.size === 1
+      ? state.readingProfiles.filter((profile) => profile.term === it.row.term && profile.source?.sense_id === sense?.id)
+      : [];
+    const profileScenes = it.sceneEvidence?.length ? it.sceneEvidence : it.scene ? [it.scene] : [];
+    const contextualProfiles = senseProfiles.filter((profile) => profileMatchesScenes(profile, profileScenes));
+    const curatedProfiles = contextualProfiles.length
+      ? contextualProfiles
+      : senseProfiles.filter((profile) => !Array.isArray(profile.when) || !profile.when.length);
+    if (transformed) {
+      it.meanings = [`〈${it.row.term}〉は姿が変わった先として書かれています。この場面は〈変身〉の解釈にまとめています。`];
+      it.grounding = { kind: "redirect", text: it.meanings[0], scenes: [...(it.sceneEvidence || [])] };
+    } else if (curatedProfiles.length && it.scene) {
+      it.readingProfileIds = curatedProfiles.map((profile) => profile.id);
+      it.meanings = curatedProfiles.map((profile) => profile.evidence);
+      it.grounding = { kind: "profile", text: curatedProfiles[0].evidence,
+        profileIds: [...it.readingProfileIds], scenes: [...(it.sceneEvidence || [])] };
+    } else if (it.scene || REVIEWED_SENSES[it.row.term]) {
       const pursuer = it.row.term === "犬" && (it.sceneEvidence || []).some((scene) =>
         [...scene.matchAll(/追いかけられ|追われ|追い回され/gu)].some((m) =>
           /(?:犬|いぬ|イヌ)(?:に|から)$/u.test(scene.slice(0, m.index)) && isAsserted(scene, m.index, m[0].length)));
@@ -476,7 +521,7 @@ const REVIEWED_SENSES = {
   "白い犬": {orig:"a white dog", source:"DreamBook Guanaco Format Hugging Face Dataset", quote:"ill-wishers around you will try to harm you, but your innate goodness and nobility will protect you.", text:"白い犬は、周囲からの悪意や妨害に対し、自分の善良さや高潔さが身を守ることを暗示します。"},
   "海": {orig:"Sea", source:"Dream_Dictionary Kaggle Dataset", quote:"What is taking place in or around the sea are symbols that relate to your inner feelings.", text:"海が出てくる夢は、まだはっきり意識できていない感情や、自分の内側の状態を映していると読めます。"},
   "変身": {orig:"Transformation", source:"Dream_Dictionary Kaggle Dataset", quote:"What was transforming in your dream? Was the process good or bad?", text:"姿が変わる場面は、新しい始まりや、変化への向き合い方を象徴すると読めます。何に変わったかだけでなく、その姿でどう感じたかも大切です。"},
-  "食べる": {orig:"eating", source:"Dream_Dictionary Kaggle Dataset", quote:"The type of food will be metaphoric to what you are fulfilling inside you.", text:"食べる場面には、心の充足や、活力を取り入れることの象徴という読み方があります。何を食べ、どんな感覚がしたかを手がかりにできます。"},
+  "食べる": {orig:"eating", source:"Dream_Dictionary Kaggle Dataset", quote:"The type of food will be metaphoric to what you are fulfilling inside you.", text:"夢の中で食べた物は、心の中で満たそうとしているものを象徴します。"},
   "友達": {orig:"Friend", source:"Dream_Dictionary Kaggle Dataset", quote:"You may see qualities in them you want to incorporate within yourself.", text:"友人は、その人に感じている魅力や、自分にも取り入れたい性質を象徴します。"},
   "泳ぐ": {orig:"swimming", source:"Dream_Dictionary Kaggle Dataset", quote:"Swimming informs the dreamer they will be challenged emotionally soon.", text:"泳ぐ夢は、感情を揺さぶられる課題に向き合い、気持ちを保ちながら状況を動かそうとすることを暗示します。"},
   "追われている": {orig:"Being Chased", source:"HeartYearning Dream Symbols Dataset", quote:"Avoidance of a person, responsibility, or emotion.", text:"追われる場面は、人との関係や責任、向き合いにくい感情から距離を置きたい気持ちの象徴として読めます。"},
@@ -833,8 +878,17 @@ function groundedItems(items, ctx) {
   return items.filter((it) => {
     const proof = it.grounding;
     if (!proof || proof.kind === "redirect" || !it.meanings?.includes(proof.text)) return false;
+    if (it.row.term === "犬" && proof.scenes.some(isDogPursuerScene)) return false;
     const scenes = ctx.scenes.filter((s) => proof.scenes.includes(s.raw) && sceneMatches(it.row, s));
     if (!scenes.length) return false;
+    if (proof.kind === "profile") {
+      const profiles = (proof.profileIds || []).map((id) => state.readingProfiles.find((profile) => profile.id === id))
+        .filter(Boolean);
+      const selected = profiles.length ? profiles : state.readingProfiles.filter((profile) =>
+        profile.term === it.row.term && profile.evidence === proof.text);
+      return selected.length > 0 && selected.every((profile) => profile.term === it.row.term &&
+        profile.source?.sense_id === it.selectedSenseId && it.meanings.includes(profile.evidence));
+    }
     if (proof.kind === "dictionary") {
       return it.senses?.some((sense) => sense.m?.some((m) => String(m).includes(proof.text)))
         && scenes.some((s) => premiseSupported(proof.text, s.raw));
@@ -849,14 +903,36 @@ function groundedItems(items, ctx) {
 }
 
 function readingProfile(item) {
-  return state.readingProfiles.find((profile) => profile.term === item.row.term && profile.evidence === item.grounding?.text &&
-    (!profile.source || item.senses?.some((sense) => sense.o === profile.source.orig &&
-      sense.s?.includes(profile.source.name) && sense.m?.some((text) => text.includes(profile.evidence)))));
+  const selectedId = item.grounding?.profileIds?.[0] || item.readingProfileIds?.[0];
+  if (selectedId) {
+    const selected = state.readingProfiles.find((profile) => profile.id === selectedId &&
+      profile.term === item.row.term && profile.source?.sense_id === item.selectedSenseId);
+    if (selected) return selected;
+  }
+  return state.readingProfiles.find((profile) => {
+    if (profile.term !== item.row.term) return false;
+    if (profile.source?.sense_id) return profile.source.sense_id === item.selectedSenseId;
+    if (profile.source?.master_only && state.masterSchema) return false;
+    return profile.evidence === item.grounding?.text &&
+      (!profile.source || profile.source.master_only && !state.masterSchema || item.senses?.some((sense) => sense.o === profile.source.orig &&
+        sense.s?.includes(profile.source.name) && sense.m?.some((text) => text.includes(profile.evidence))));
+  });
 }
 
 function meaningClaims(item) {
-  const profile = readingProfile(item);
-  if (profile) return profile.claims.map((claim) => ({ ...claim, profileId: profile.id, evidence: profile.evidence }));
+  const selected = (item.grounding?.profileIds || []).map((id) => state.readingProfiles.find((profile) =>
+    profile.id === id && profile.term === item.row.term && profile.source?.sense_id === item.selectedSenseId)).filter(Boolean);
+  const profiles = selected.length ? selected : [readingProfile(item)].filter(Boolean);
+  if (profiles.length) return profiles.flatMap((profile) => profile.claims.filter((claim) => {
+    if (!claim.when) return true;
+    const scenes = item.sceneEvidence?.length ? item.sceneEvidence : item.scene ? [item.scene] : [];
+    return claim.when.some((trigger) => scenes.some((scene) => {
+      for (let index = scene.indexOf(trigger); index >= 0; index = scene.indexOf(trigger, index + 1)) {
+        if (isAsserted(scene, index, trigger.length)) return true;
+      }
+      return false;
+    }));
+  }).map((claim) => ({ ...claim, profileId: profile.id, evidence: profile.evidence })));
   // ponytail: 未校閲の意味は、短い名詞句を持つ単純な文型だけ採用する。自由文の読解は行わない。
   const evidence = item.grounding?.text || "";
   const match = /^[^、。]{1,45}は、?([^、。]{2,35})(?:を暗示します|を意味します|の象徴です)。$/u.exec(evidence);
@@ -884,7 +960,7 @@ function buildReadingPlan(items, ctx) {
   for (const fact of facts) {
     if (fact.profileId === "eating-fulfilment" && tasteScene && fact.scene.episode === tasteScene.episode) {
       fact.summary = "満足や手応えの不足";
-      fact.sentence = "食べることを心の充足の象徴と読むと、食べても味がしなかった展開には、満足や手応えを得られない感覚が表れています。";
+      fact.sentence = "夢の中で食べた物は、心の中で満たそうとしているものの象徴です。味がしなかったため、それを得た実感や満足感は薄い状態として描かれています。";
       fact.observation = tasteScene.raw;
     }
   }
@@ -906,7 +982,16 @@ function buildReadingPlan(items, ctx) {
     if (!unique.length) continue;
     const warning = unique.find((f) => f.role === "warning");
     const outcomes = unique.filter((f) => f.role === "outcome");
+    const swim = unique.find((f) => f.profileId === "swim-agency");
+    const escape = unique.find((f) => f.profileId === "escape-avoidance");
+    const chase = unique.find((f) => f.profileId === "chase-avoidance");
+    const bridge = unique.find((f) => f.profileId === "bridge-transition");
+    const whiteDog = unique.find((f) => f.profileId === "white-dog-protection");
+    const roughWater = unique.find((f) => f.profileId === "rough-water-problems");
     const ending = ordered.at(-1);
+    const episodeScenes = ctx.scenes.filter((scene) => scene.episode === episode);
+    const feltFear = episodeScenes.some((scene) => assertedPattern(scene.raw, /怖|恐|不安/gu));
+    const feltRelief = episodeScenes.some((scene) => assertedPattern(scene.raw, /安心|安堵|ほっと/gu));
     const explicitEnding = /最後|その後|それから|やがて/u.test(ending.scene.raw) &&
       (ending.scene.id > ordered[0].scene.id || position(ending) > position(ordered[0]));
     const outcome = (explicitEnding && ending.role === "outcome" && ending) || outcomes.at(-1);
@@ -915,7 +1000,21 @@ function buildReadingPlan(items, ctx) {
       ((main.role === "tension" && f.role === "desire") || (main.role === "desire" && f.role === "tension")));
     let lead;
     let focus;
-    if (warning && outcome) {
+    if (chase && escape) {
+      focus = [chase, escape];
+      lead = chase.summary + "と、自分の恐れや人生で避けていることへの無自覚が並んで表れています。" +
+        (feltFear && feltRelief ? "追われる怖さと、最後に逃げ切って安心した感覚が対照的に描かれた夢です。" : "");
+    } else if (swim && roughWater) {
+      focus = [roughWater, swim];
+      lead = "荒れた水は、現実の問題が荒れ狂っている兆しです。その中を泳ぐ場面は、近く感情面の課題に直面する暗示です。" +
+        "合わせると、問題が動く状況の中で、感情面の試練に向き合っている夢と読めます。";
+    } else if (swim && escape && bridge && whiteDog) {
+      focus = [swim, bridge, whiteDog, escape];
+      lead = "泳ぐ場面は、近く感情面の課題に直面する暗示です。" +
+        "橋は今いる場所から別の段階へ移ることを表し、その向こうの白い犬には、周囲の悪意や妨害に対して、あなたの善良さや高潔さが身を守るという読みがあります。" +
+        "一方、最後に逃げる場面は、自分の恐れや人生で避けているものにまだ気づいていない状態を示します。" +
+        "つまり、変化の節目で感情的な課題に向き合う中、身を守る強さがある一方で、何から逃れようとしているのかは見えていない、という夢です。";
+    } else if (warning && outcome) {
       focus = [warning, outcome];
       lead = explicitEnding && ending === warning
         ? outcome.summary + "がある一方、結末には" + warning.summary + "が残る夢です。"
@@ -924,9 +1023,22 @@ function buildReadingPlan(items, ctx) {
         : warning.summary + "がある一方で、" + outcome.summary + "もある夢です。";
     } else if (counter) {
       focus = ordered.filter((f) => f === main || f === counter);
-      lead = explicitEnding && focus[1] === ending
-        ? focus[0].summary + "がある一方、結末には" + focus[1].summary + "が表れています。"
-        : focus[0].summary + "と、" + focus[1].summary + "の両方が表れた夢です。";
+      const tension = [main, counter].find((f) => f.role === "tension");
+      const desire = [main, counter].find((f) => f.role === "desire");
+      const transition = unique.find((f) => f.role === "transition" && f !== main && f !== counter);
+      const resource = unique.find((f) => f.role === "resource" && f !== main && f !== counter &&
+        (!transition || themeSimilarity(transition, f) > 0));
+      if (transition && resource && tension && desire) {
+        focus.push(transition, resource);
+        lead = tension.summary + "がある一方で、" + desire.summary + "も表れています。" +
+          transition.item.row.term + "は" + transition.summary + "を表し、" +
+          resource.item.row.term + "は、" + resource.summary.replace(/こと$/u, "") + "とされています。" +
+          "この夢では、課題と向き合うことに加え、次の段階への移行と自分を守る力も描かれています。";
+      } else {
+        lead = explicitEnding && focus[1] === ending
+          ? focus[0].summary + "がある一方、結末には" + focus[1].summary + "が表れています。"
+          : focus[0].summary + "と、" + focus[1].summary + "の両方が表れた夢です。";
+      }
     } else {
       const related = unique.find((f) => f !== main && f.role !== "need" && f.role !== "context" &&
         (themeSimilarity(main, f) > 0 || f.scene.id === main.scene.id));
@@ -934,6 +1046,14 @@ function buildReadingPlan(items, ctx) {
       lead = focus.length === 2
         ? focus[0].summary + "と、" + focus[1].summary + "が表れている夢です。"
         : main.sentence;
+    }
+    const change = unique.find((f) => f.role === "transition");
+    const fulfilment = unique.find((f) => f.role === "resource");
+    const food = group.find((f) => f.profileId === "eating-fulfilment");
+    if (!warning && !outcome && !counter && change && fulfilment && food && tasteScene?.episode === episode) {
+      focus = [change, fulfilment];
+      lead = `${change.item.row.term}には${change.summary}が表れ、味がしない食事には、心を満たすものを得た実感の薄さが重なっています。` +
+        "変化は描かれているものの、満たされた手応えが伴っていないという対比が、この夢の中心です。";
     }
     if (blocks.length && episodes.length > 1) {
       const event = EVENT_RULES.some(([term]) => term === main.item.row.term);
@@ -962,9 +1082,9 @@ function buildReadingPlan(items, ctx) {
     const needs = unique.filter((f) => f.role === "need");
     if (needs.length) add("implication", needs.map((f) => f.sentence).join(""), needs);
   }
-  const last = ctx.scenes.at(-1)?.raw || "";
-  if (facts.length && assertedPattern(last, /逃げ切|逃げき|助か|救われ|助けられ|抜け出/gu)) {
-    add("ending", "結末には、困っていた状況から抜け出す展開があります。途中の負担だけでなく、そこからの回復や解放までを含んだ夢と読めます。", [], [last]);
+  for (const scene of ctx.scenes.filter((entry) => assertedPattern(entry.raw, /助か|救われ|助けられ/gu) &&
+    facts.some((fact) => fact.scene.episode === entry.episode && fact.role === "tension"))) {
+    add("observation", "最後には助かる結末が描かれています。", [], [scene.raw]);
   }
   return blocks;
 }
@@ -991,6 +1111,11 @@ function composeReading(items, diaryText, ctx) {
 
 const NO_MATCH_MESSAGE =
   "……霧が濃くて、今夜はうまく視えないようです。印象に残った物や人、場所、感情を名詞で具体的に(例:「犬」「海」「古い家」)書き足して、もう一度話してみてください。";
+
+function reportMatches(items, ctx) {
+  const terms = new Set(buildReadingPlan(items, ctx).flatMap((block) => block.terms));
+  return terms.size ? items.filter((item) => terms.has(item.row.term)) : items;
+}
 
 /* ---------- 占い師の語り(タイプライター) ---------- */
 
@@ -1104,14 +1229,15 @@ async function interpret() {
       tellerSay("……うーん。");
     } else {
       readingText.textContent = composeReading(items, text, ctx);
-      renderTermChips(items);
-      renderMatches(matchesEl, items);
-      matchCount.textContent = `${items.length}件`;
+      const citedItems = reportMatches(items, ctx);
+      renderTermChips(citedItems);
+      renderMatches(matchesEl, citedItems);
+      matchCount.textContent = `${citedItems.length}件`;
       matchedFold.hidden = false;
       readingRow.hidden = false;
       replay(readingRow, "mist-reveal");
       tellerSay("……視えましたよ。");
-      saveHistoryEntry(text, items);
+      saveHistoryEntry(text, citedItems);
       savedNote.hidden = false;
     }
     againRow.hidden = false;

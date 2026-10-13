@@ -7,9 +7,8 @@ dictionary and appends new sources without re-fetching the original
 environment).
 
 Currently implemented additional sources:
-  - Rüya Tabiri GitHub Pages dataset (21,999 Turkish dream pages,
-    GPL-3.0 repository license, fetched via raw.githubusercontent.com
-    from the sitemap page list).
+  - Rüya Tabiri GitHub Pages dataset (all unique Turkish dream pages
+    listed in the repository sitemap, GPL-3.0, fetched from raw pages).
 
 Usage:
   python3 scripts/extend_dream_terms.py [--fetch-only] [--limit N]
@@ -19,6 +18,7 @@ import argparse
 import gzip
 import html as html_lib
 import json
+import os
 import re
 import threading
 import time
@@ -32,6 +32,7 @@ ROOT = Path(__file__).resolve().parents[1]
 RAW_DIR = ROOT / "data" / "raw"
 DICT_PATH = ROOT / "data" / "dream_terms.json.gz"
 PAGES_CACHE = RAW_DIR / "ruya_tabiri_pages.jsonl"
+PARSER_VERSION = 2
 
 UA = "DreamInterpretationDatasetBuilder/0.2"
 RUYA_REPO_RAW = "https://raw.githubusercontent.com/ruya-tabiri/ruya-tabiri.github.io/main/"
@@ -86,23 +87,24 @@ def parse_ruya_page(slug, page_html):
     for raw in re.findall(r"<p[^>]*>(.*?)</p>", page_html, re.S):
         text = html_lib.unescape(TAG_RE.sub(" ", raw))
         text = re.sub(r"\s+", " ", text).strip()
-        if len(text) >= 60:
+        if text:
             paragraphs.append(text)
     if not paragraphs:
         return None
-
-    # 一般解釈(最初の段落)のみを採用。宗教的・心理的段落は既知の接頭辞で除外。
-    general = next(
-        (p for p in paragraphs if not re.match(r"^(dini|psikolojik)\b", p, re.I)),
-        paragraphs[0],
-    )
 
     term = re.sub(r"^r[uü]yada\s+", "", title, flags=re.I).strip()
     term = re.sub(r"\s+g[oö]rmek$", "", term, flags=re.I).strip()
     if not term:
         return None
 
-    return {"slug": slug, "term": term, "alias": title, "meaning": general[:600]}
+    return {
+        "slug": slug,
+        "term": term,
+        "alias": title,
+        "meaning": "\n".join(paragraphs),
+        "source_url": RUYA_REPO_RAW + slug,
+        "parser_version": PARSER_VERSION,
+    }
 
 
 def load_cached_pages():
@@ -112,7 +114,8 @@ def load_cached_pages():
             for line in fh:
                 try:
                     row = json.loads(line)
-                    rows[row["slug"]] = row
+                    if row.get("parser_version") == PARSER_VERSION and row.get("source_url"):
+                        rows[row["slug"]] = row
                 except (json.JSONDecodeError, KeyError):
                     continue
     return rows
@@ -163,10 +166,26 @@ def fetch_ruya_pages(limit=None, jobs=6):
     return cached
 
 
-def merge_into_dictionary(pages):
-    with gzip.open(DICT_PATH, "rt", encoding="utf-8") as fh:
+def merge_into_dictionary(pages, input_path=None, output_path=None, replace_source=False):
+    input_path = Path(input_path or DICT_PATH).resolve()
+    output_path = Path(output_path or input_path).resolve()
+    if replace_source and output_path == input_path:
+        raise ValueError("Source replacement must write to a separate staging file")
+    opener = gzip.open if input_path.suffix == ".gz" else open
+    with opener(input_path, "rt", encoding="utf-8") as fh:
         data = json.load(fh)
-    by_key = {e["term_normalized"]: e for e in data["entries"]}
+    entries = data["entries"]
+    if replace_source:
+        kept = []
+        for entry in entries:
+            old_meanings = [m for m in entry["meanings"]
+                            if m.get("source_name") == RUYA_SOURCE["name"]]
+            entry["meanings"] = [m for m in entry["meanings"] if m not in old_meanings]
+            entry["sources"] = [s for s in entry["sources"] if s["name"] != RUYA_SOURCE["name"]]
+            if entry["meanings"] or not old_meanings:
+                kept.append(entry)
+        entries = kept
+    by_key = {(e["language"], e["term_normalized"]): e for e in entries}
     added_terms = 0
     added_meanings = 0
 
@@ -175,13 +194,13 @@ def merge_into_dictionary(pages):
         meaning = (row.get("meaning") or "").strip()
         if not term or not meaning:
             continue
-        key = term.casefold()
+        key = ("tr", term.casefold())
         alias = (row.get("alias") or "").strip()
         entry = by_key.get(key)
         if entry is None:
             entry = {
                 "term": term,
-                "term_normalized": key,
+                "term_normalized": key[1],
                 "language": "tr",
                 "aliases": [alias] if alias else [],
                 "meanings": [],
@@ -194,20 +213,36 @@ def merge_into_dictionary(pages):
                 entry["aliases"] = sorted(set(entry["aliases"]) | {alias}, key=str.casefold)
 
         mkey = re.sub(r"\s+", " ", meaning).strip().casefold()
-        if not any(re.sub(r"\s+", " ", m["text"]).strip().casefold() == mkey for m in entry["meanings"]):
+        existing = next((m for m in entry["meanings"]
+                         if re.sub(r"\s+", " ", m["text"]).strip().casefold() == mkey), None)
+        attribution = {
+            "name": RUYA_SOURCE["name"],
+            "url": row.get("source_url") or RUYA_SOURCE["url"],
+            "license_note": RUYA_SOURCE["license_note"],
+        }
+        if existing is None:
             entry["meanings"].append(
                 {
                     "text": meaning,
-                    "source_name": RUYA_SOURCE["name"],
-                    "source_url": RUYA_SOURCE["url"],
-                    "license_note": RUYA_SOURCE["license_note"],
+                    "source_name": attribution["name"],
+                    "source_url": attribution["url"],
+                    "license_note": attribution["license_note"],
+                    "sources": [attribution],
                 }
             )
             added_meanings += 1
+        else:
+            direct_sources = existing.setdefault("sources", [{
+                "name": existing.get("source_name", ""),
+                "url": existing.get("source_url", ""),
+                "license_note": existing.get("license_note", ""),
+            }])
+            if attribution not in direct_sources:
+                direct_sources.append(attribution)
         if RUYA_SOURCE["name"] not in {s["name"] for s in entry["sources"]}:
             entry["sources"].append(dict(RUYA_SOURCE))
 
-    entries = sorted(by_key.values(), key=lambda e: e["term_normalized"])
+    entries = sorted(by_key.values(), key=lambda e: (e["language"], e["term_normalized"]))
     language_counts = {}
     source_names = set()
     for entry in entries:
@@ -222,8 +257,11 @@ def merge_into_dictionary(pages):
     data["language_counts"] = dict(sorted(language_counts.items()))
     data["source_count"] = len(source_names)
     data["entries"] = entries
-    with gzip.open(DICT_PATH, "wt", encoding="utf-8", compresslevel=9) as fh:
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = output_path.with_name(output_path.name + ".tmp")
+    with gzip.open(temporary, "wt", encoding="utf-8", compresslevel=9) as fh:
         json.dump(data, fh, ensure_ascii=False, separators=(",", ":"))
+    os.replace(temporary, output_path)
     print(f"dictionary: {len(entries)} entries (+{added_terms} new terms, +{added_meanings} meanings)")
 
 
@@ -232,11 +270,20 @@ def main():
     parser.add_argument("--fetch-only", action="store_true")
     parser.add_argument("--limit", type=int)
     parser.add_argument("--jobs", type=int, default=6)
+    parser.add_argument("--input", type=Path, default=DICT_PATH,
+                        help="Merged dictionary to extend (JSON or gzip JSON)")
+    parser.add_argument("--output", type=Path, help="Write the merged dictionary to this path")
+    parser.add_argument("--replace-source", action="store_true",
+                        help="Replace this source's old meanings; requires a separate --output")
     args = parser.parse_args()
+
+    if args.replace_source and (args.fetch_only or not args.output or args.input.resolve() == args.output.resolve()):
+        parser.error("--replace-source requires a separate --input/--output and cannot be used with --fetch-only")
 
     pages = fetch_ruya_pages(limit=args.limit, jobs=args.jobs)
     if not args.fetch_only:
-        merge_into_dictionary(pages)
+        merge_into_dictionary(pages, input_path=args.input, output_path=args.output,
+                              replace_source=args.replace_source)
 
 
 if __name__ == "__main__":

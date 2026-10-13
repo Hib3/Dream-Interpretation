@@ -803,14 +803,13 @@ def merge_entries(entries: list[dict]) -> list[dict]:
         term = clean_entry_term(entry["term"])
         if not term:
             continue
-        if entry.get("language") == "en" and len(term) == 1:
-            continue
-        key = term.casefold()
+        language = entry["language"]
+        key = (language, term.casefold())
         if key not in merged:
             merged[key] = {
                 "term": term,
-                "term_normalized": key,
-                "language": entry["language"],
+                "term_normalized": key[1],
+                "language": language,
                 "aliases": sorted(set(entry.get("aliases", [])), key=str.casefold),
                 "meanings": [],
                 "sources": [],
@@ -823,16 +822,26 @@ def merge_entries(entries: list[dict]) -> list[dict]:
         )
 
         mkey = meaning_key(entry["meaning"])
+        attribution = {
+            "name": entry["source"]["name"],
+            "url": entry["source"]["url"],
+            "license_note": entry["source"]["license_note"],
+        }
         if mkey not in meaning_keys_by_term[key]:
             meaning_keys_by_term[key].add(mkey)
             item["meanings"].append(
                 {
                     "text": entry["meaning"],
-                    "source_name": entry["source"]["name"],
-                    "source_url": entry["source"]["url"],
-                    "license_note": entry["source"]["license_note"],
+                    "source_name": attribution["name"],
+                    "source_url": attribution["url"],
+                    "license_note": attribution["license_note"],
+                    "sources": [attribution],
                 }
             )
+        else:
+            meaning = next(m for m in item["meanings"] if meaning_key(m["text"]) == mkey)
+            if attribution not in meaning["sources"]:
+                meaning["sources"].append(attribution)
 
         source_key = (entry["source"]["name"], entry["source"]["url"])
         if source_key not in {(s["name"], s["url"]) for s in item["sources"]}:
@@ -848,7 +857,7 @@ def merge_entries(entries: list[dict]) -> list[dict]:
     for item in result:
         item["meaning_count"] = len(item["meanings"])
         item["source_count"] = len(item["sources"])
-    return sorted(result, key=lambda item: item["term_normalized"])
+    return sorted(result, key=lambda item: (item["language"], item["term_normalized"]))
 
 
 def write_output(entries: list[dict]) -> None:

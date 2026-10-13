@@ -997,6 +997,10 @@ button {
     justify-content: space-between;
   }
 
+  #readingRow {
+    scroll-margin-bottom: calc(160px + env(safe-area-inset-bottom));
+  }
+
   .tab {
     flex: 1 1 0;
     padding: 0 6px;
