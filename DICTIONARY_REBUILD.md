@@ -178,7 +178,7 @@ Phase 2の配信前には、stagingを実ブラウザでPC・スマホから検�
 
 固定seed監査は100件（各言語25件）。zh-Hantで不自然な逐語訳1件を修正し、与え手・受け手の逆転が疑われた1件は原典照合後も訳を確定せず隔離しました。観測された事前修正問題率2%はこの標本内の値で、全体誤訳率の推定ではありません。QAフラグ率53.66%には原典品質・意味曖昧性も含まれるため、翻訳誤り率とは区別します。
 
-確認: Python 256 tests、実辞書診断18シナリオ、report 17ケース/28 semantic profiles、production runtime loader/search/diagnosis PASS。実ブラウザで例文の5候補診断、390px幅の横overflowなし、console error 0を確認済みです。未解決12,876件を除外しており、GitHub Pagesへの公開と旧URLのproduction配信確認は未実施です。完全リリース扱いにはしません。
+確認: Python 256 tests、実辞書診断18シナリオ、report 17ケース/28 semantic profiles、production runtime loader/search/diagnosis PASS。実ブラウザで例文の5候補診断、390px幅の横overflowなし、console error 0を確認済みです。未解決12,876件はruntimeから除外し、隔離理由を保持しています。2026-10-13にGitHub Pagesへ公開し、index/app/runtime profile/shardのHTTP 200と辞書件数を確認しました。初回artifactがリポジトリ全体を含み、`.codex`や開発用sourceも公開されていたため、workflowをサイト必須ファイルのみのallowlist artifactへ修正して再公開中です。再公開後、内部パスが404になることを確認するまでセキュリティ是正は未完了です。
 
 ## テストと監査を再現する
 

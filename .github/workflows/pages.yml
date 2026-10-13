@@ -29,10 +29,20 @@ jobs:
         uses: actions/configure-pages@v5
         with:
           enablement: true
+      - name: Prepare public site
+        run: |
+          mkdir -p _site/data _site/icons
+          cp index.html app.js fx.js styles.css manifest.webmanifest sw.js .nojekyll _site/
+          cp -a data/ja _site/data/
+          cp -a icons/. _site/icons/
+          test -f _site/data/ja/terms.min.json
+          test -f _site/data/ja/reading-semantics-runtime.json
+          test ! -e _site/.codex
+          test ! -e _site/scripts
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
         with:
-          path: .
+          path: _site
       - name: Deploy
         id: deployment
         uses: actions/deploy-pages@v4
